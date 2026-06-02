@@ -131,7 +131,8 @@ npm run tauri build
    - **OpenAI**: https://platform.openai.com
    - **Claude**: https://console.anthropic.com
    - **Gemini**: https://aistudio.google.com
-   - **自定义**: 兼容 OpenAI 格式的 API（如 DeepSeek）
+    - **自定义**: 兼容 OpenAI 格式的 API（如 DeepSeek）
+    - 💡 **速度建议**: 推荐使用 **DeepSeek-V4-Flash**，生成速度最快
 3. （可选）填入 **Tavily API Key** 以启用自动资源搜索：https://tavily.com
 
 ---
@@ -178,4 +179,5 @@ MIT © RoadmapAI
 - 应用语言界面为**中文**
 - API 密钥存储在本地 SQLite 数据库中，不会上传到任何服务器
 - 数据库文件位于系统应用数据目录（macOS: `~/Library/Application Support/com.roadmapai.app/`）
+- ⚠️ 项目仍存在不少 bug，会逐步修复，欢迎提 issue 反馈
 - 无测试、无 CI — TypeScript 严格模式在 `npm run build` 时进行类型检查
