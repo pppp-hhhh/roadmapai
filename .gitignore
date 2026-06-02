@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Tauri
+src-tauri/target/
+src-tauri/bin/
+src-tauri/*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage/
+
+# CodeGraph
+.codegraph/
+
+# Browser sessions
+.browser-sessions/
+
+# Claude / Agent configs
+.claude/
+.opencode/
+
+# Generated
+src-tauri/gen/
