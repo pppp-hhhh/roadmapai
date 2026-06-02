@@ -29,6 +29,9 @@ npm-debug.log*
 .env.local
 .env.*.local
 
+# Icon source (generated icons are committed)
+app-icon.png
+
 # Testing
 coverage/
 
