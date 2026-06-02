@@ -88,8 +88,8 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 ### 环境要求 / Prerequisites
 
 - **Node.js** >= 18
-- **Rust** >= 1.70 (推荐使用 [rustup](https://rustup.rs))
-- **macOS / Windows / Linux**
+- **Rust** >= 1.70（需安装完整 Rust 开发环境，含 `rustc`、`cargo`。推荐使用 [rustup](https://rustup.rs) 安装）
+- **macOS / Windows / Linux**（macOS 需安装 Xcode Command Line Tools；Windows 需安装 Visual Studio Build Tools 或 C++ 生成工具）
 
 ### 安装 / Installation
 
