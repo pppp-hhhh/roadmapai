@@ -80,14 +80,17 @@ pub async fn search_resources(
         .filter(|r| !r.url.is_empty() && !r.title.is_empty())
         .map(|r| {
             let resource_type = map_resource_type(&r.url);
+            // 字符级截断（中文/UTF-8 不能用字节索引）
+            let snippet = if r.content.chars().count() > 200 {
+                let truncated: String = r.content.chars().take(200).collect();
+                format!("{}...", truncated)
+            } else {
+                r.content
+            };
             ResourceDetail {
                 title: r.title,
                 url: r.url,
-                snippet: Some(if r.content.len() > 200 {
-                    format!("{}...", &r.content[..200])
-                } else {
-                    r.content
-                }),
+                snippet: Some(snippet),
                 resource_type,
             }
         })

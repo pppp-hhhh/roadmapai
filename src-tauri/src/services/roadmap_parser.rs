@@ -11,8 +11,35 @@ struct AiResource {
     resource_type: String,
 }
 
-fn clean_json(s: &str) -> String {
-    let mut result = s.trim().to_string();
+/// Strip DeepSeek/Claude thinking tags (handle `...` and `<thinking>...</thinking>`)
+fn strip_thinking_tags(s: &str) -> String {
+    let s = remove_tagged_blocks(s, "think");
+    let s = remove_tagged_blocks(&s, "thinking");
+    let s = remove_tagged_blocks(&s, "reasoning");
+    s
+}
+
+fn remove_tagged_blocks(s: &str, tag: &str) -> String {
+    let open = format!("<{}>", tag);
+    let close = format!("</{}>", tag);
+    let mut result = String::with_capacity(s.len());
+    let mut pos = 0;
+    while let Some(start) = s[pos..].find(&open) {
+        result.push_str(&s[pos..pos + start]);
+        let after_open = pos + start + open.len();
+        if let Some(end) = s[after_open..].find(&close) {
+            pos = after_open + end + close.len();
+        } else {
+            pos = after_open;
+        }
+    }
+    result.push_str(&s[pos..]);
+    result
+}
+
+pub fn clean_json(s: &str) -> String {
+    let mut result = strip_thinking_tags(s);
+    result = result.trim().to_string();
     // Repeatedly strip markdown code fences
     for _ in 0..3 {
         let trimmed = result.trim().to_string();
@@ -23,6 +50,36 @@ fn clean_json(s: &str) -> String {
         let stripped = stripped
             .strip_suffix("```").unwrap_or(stripped);
         result = stripped.trim().to_string();
+    }
+    // 修复 AI 输出的非法 JSON 转义（如 Markdown 里的 \$ 会被 serde_json 拒绝）
+    result = fix_invalid_json_escapes(&result);
+    result
+}
+
+/// 修复 AI 输出中常见的非法 JSON 转义序列（如 Markdown 里的 `\$`、`\#` 等）
+/// 只保留 JSON 规范的 9 种转义：`\" \\ \/ \b \f \n \r \t \uXXXX`
+fn fix_invalid_json_escapes(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut result = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' && i + 1 < chars.len() {
+            let next = chars[i + 1];
+            // 合法 JSON 转义字符
+            if matches!(next, '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't' | 'u') {
+                result.push(c);
+                result.push(next);
+                i += 2;
+            } else {
+                // 非法转义（如 \$、\#、\&、\<、\> 等）—— 保留转义后的字符，丢掉反斜杠
+                result.push(next);
+                i += 2;
+            }
+        } else {
+            result.push(c);
+            i += 1;
+        }
     }
     result
 }
@@ -88,23 +145,27 @@ fn try_parse_with_extraction<T: serde::de::DeserializeOwned>(input: &str) -> Res
     }
 
     if let Some(span) = extract_json_span(input) {
-        if let Ok(v) = serde_json::from_str::<T>(span) {
+        let span_fixed = fix_invalid_json_escapes(span);
+        if let Ok(v) = serde_json::from_str::<T>(&span_fixed) {
             return Ok(v);
         }
-        if let Ok(v) = serde_json::from_str::<T>(&clean_json(span)) {
+        if let Ok(v) = serde_json::from_str::<T>(&clean_json(&span_fixed)) {
             return Ok(v);
         }
     }
 
     let mut v: serde_json::Value = serde_json::from_str(&cleaned)
-        .or_else(|_| extract_json_span(input).and_then(|s| serde_json::from_str(s).ok()).ok_or_else(|| {
-            format!("Value 解析失败（无法从响应中提取 JSON）")
-        }))?;
+        .or_else(|_| {
+            extract_json_span(input)
+                .map(|s| fix_invalid_json_escapes(s))
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .ok_or_else(|| format!("Value 解析失败（无法从响应中提取 JSON）"))
+        })?;
     fix_null_to_zero(&mut v);
     serde_json::from_value(v).map_err(|e| format!("Value 解析后类型转换失败: {}", e))
 }
 
-fn fix_null_to_zero(v: &mut serde_json::Value) {
+pub fn fix_null_to_zero(v: &mut serde_json::Value) {
     match v {
         serde_json::Value::Object(map) => {
             for val in map.values_mut() {
@@ -123,7 +184,7 @@ fn fix_null_to_zero(v: &mut serde_json::Value) {
     }
 }
 
-fn repair_truncated_json(s: &str) -> String {
+pub fn repair_truncated_json(s: &str) -> String {
     let s = s.trim().to_string();
     let s = s
         .strip_prefix("```json")
@@ -164,21 +225,45 @@ fn repair_truncated_json(s: &str) -> String {
             }
         }
     }
-    for _ in 0..bracket_depth.max(0) { result.push(']'); }
     for _ in 0..brace_depth.max(0) { result.push('}'); }
+    for _ in 0..bracket_depth.max(0) { result.push(']'); }
     result
 }
 
-pub fn parse_outline_response(raw: &str) -> Result<Vec<StageOutline>, String> {
+/// 大纲生成结果（含 AI 自主时间估算）
+pub struct OutlineResult {
+    pub stages: Vec<StageOutline>,
+    pub suggested_weekly_hours: u32,
+    pub suggested_total_weeks: u32,
+    pub estimated_total_hours: f64,
+}
+
+pub fn parse_outline_response(raw: &str) -> Result<OutlineResult, String> {
     #[derive(Deserialize)]
     struct OutlineWrapper {
         stages: Vec<StageOutline>,
+        #[serde(default)]
+        suggested_weekly_hours: Option<f64>,
+        #[serde(default)]
+        suggested_total_weeks: Option<f64>,
+        #[serde(default)]
+        estimated_total_hours: Option<f64>,
     }
 
     let mut buffer = raw.to_string();
     for attempt in 0..3 {
         match try_parse_with_extraction::<OutlineWrapper>(&buffer) {
-            Ok(w) => return Ok(w.stages),
+            Ok(w) => {
+                let weekly = w.suggested_weekly_hours.unwrap_or(10.0).max(1.0) as u32;
+                let total_weeks = w.suggested_total_weeks.unwrap_or(8.0).max(1.0) as u32;
+                let total_hours = w.estimated_total_hours.unwrap_or(weekly as f64 * total_weeks as f64);
+                return Ok(OutlineResult {
+                    stages: w.stages,
+                    suggested_weekly_hours: weekly,
+                    suggested_total_weeks: total_weeks,
+                    estimated_total_hours: total_hours,
+                });
+            }
             Err(e) if attempt == 0 => {
                 warn!("大纲 JSON 第 1 次解析失败：{}。尝试修复...", e);
                 buffer = repair_truncated_json(raw);
@@ -221,7 +306,7 @@ pub fn parse_stage_detail_response(raw: &str, order: usize) -> Result<StageDetai
         let result: Result<StageDetail, String> = (|| {
             let cleaned = clean_json(&buffer);
             let mut v: serde_json::Value = serde_json::from_str(&cleaned)
-                .or_else(|_| extract_json_span(&buffer).and_then(|s| serde_json::from_str(s).ok()).ok_or_else(|| {
+                .or_else(|_| extract_json_span(&buffer).map(|s| fix_invalid_json_escapes(s)).and_then(|s| serde_json::from_str(&s).ok()).ok_or_else(|| {
                     format!("Value 解析失败: 无法从响应中提取 JSON")
                 }))?;
             fix_null_to_zero(&mut v);
@@ -307,7 +392,7 @@ pub fn parse_stage_outline_only_response(raw: &str, order: usize, fallback_title
         let result: Result<StageOutlineOnly, String> = (|| {
             let cleaned = clean_json(&buffer);
             let mut v: serde_json::Value = serde_json::from_str(&cleaned)
-                .or_else(|_| extract_json_span(&buffer).and_then(|s| serde_json::from_str(s).ok()).ok_or_else(|| {
+                .or_else(|_| extract_json_span(&buffer).map(|s| fix_invalid_json_escapes(s)).and_then(|s| serde_json::from_str(&s).ok()).ok_or_else(|| {
                     format!("Value 解析失败")
                 }))?;
             fix_null_to_zero(&mut v);
@@ -359,7 +444,7 @@ pub fn parse_task_content_response(raw: &str, order: usize, title: &str, task_ty
             let cleaned = clean_json(&buffer);
             let mut v: serde_json::Value = serde_json::from_str(&cleaned)
                 .or_else(|e| {
-                    extract_json_span(&buffer).and_then(|s| serde_json::from_str(s).ok()).ok_or_else(|| {
+                    extract_json_span(&buffer).map(|s| fix_invalid_json_escapes(s)).and_then(|s| serde_json::from_str(&s).ok()).ok_or_else(|| {
                         let preview: String = buffer.chars().take(200).collect();
                         format!("Value 解析失败: {} | 清理后前200字: {}", e, preview)
                     })
@@ -419,7 +504,7 @@ pub fn parse_task_augment_response(raw: &str, order: usize) -> Result<crate::ser
         let result: Result<TaskAugment, String> = (|| {
             let cleaned = clean_json(&buffer);
             let mut v: serde_json::Value = serde_json::from_str(&cleaned)
-                .or_else(|_| extract_json_span(&buffer).and_then(|s| serde_json::from_str(s).ok()).ok_or_else(|| {
+                .or_else(|_| extract_json_span(&buffer).map(|s| fix_invalid_json_escapes(s)).and_then(|s| serde_json::from_str(&s).ok()).ok_or_else(|| {
                     format!("Value 解析失败")
                 }))?;
             fix_null_to_zero(&mut v);

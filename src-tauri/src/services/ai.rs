@@ -1,4 +1,5 @@
 use crate::models::{RoadmapRequest, RoadmapResponse};
+use crate::services::roadmap_parser::{fix_null_to_zero, repair_truncated_json};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
@@ -48,101 +49,6 @@ fn parse_roadmap_json(content: &str) -> Result<RoadmapResponse, String> {
     }
 
     Err("JSON 路线图解析失败，已尝试所有方式".to_string())
-}
-
-fn fix_null_to_zero(v: &mut serde_json::Value) {
-    match v {
-        serde_json::Value::Object(map) => {
-            for val in map.values_mut() {
-                fix_null_to_zero(val);
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            for val in arr.iter_mut() {
-                fix_null_to_zero(val);
-            }
-        }
-        serde_json::Value::Null => {
-            *v = serde_json::Value::Number(0.into());
-        }
-        _ => {}
-    }
-}
-
-fn repair_truncated_json(s: &str) -> String {
-    let s = s.trim().to_string();
-
-    let s = s
-        .strip_prefix("```json")
-        .or_else(|| s.strip_prefix("```"))
-        .unwrap_or(&s)
-        .trim();
-    let s = s
-        .strip_suffix("```")
-        .unwrap_or(s)
-        .trim()
-        .to_string();
-
-    let mut result = s;
-    let mut in_string = false;
-    let mut escape_next = false;
-
-    for ch in result.chars() {
-        if escape_next {
-            escape_next = false;
-            continue;
-        }
-        if ch == '\\' {
-            escape_next = true;
-            continue;
-        }
-        if ch == '"' {
-            in_string = !in_string;
-        }
-    }
-
-    if in_string {
-        result.push('"');
-    }
-
-    // Count unmatched brackets
-    let mut brace_depth: i32 = 0;
-    let mut bracket_depth: i32 = 0;
-    in_string = false;
-    escape_next = false;
-
-    for ch in result.chars() {
-        if escape_next {
-            escape_next = false;
-            continue;
-        }
-        if ch == '\\' {
-            escape_next = true;
-            continue;
-        }
-        if ch == '"' {
-            in_string = !in_string;
-            continue;
-        }
-        if !in_string {
-            match ch {
-                '{' => brace_depth += 1,
-                '}' => brace_depth -= 1,
-                '[' => bracket_depth += 1,
-                ']' => bracket_depth -= 1,
-                _ => {}
-            }
-        }
-    }
-
-    for _ in 0..bracket_depth.max(0) {
-        result.push(']');
-    }
-    for _ in 0..brace_depth.max(0) {
-        result.push('}');
-    }
-
-    result
 }
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
@@ -306,8 +212,8 @@ fn build_roadmap_prompt(request: &RoadmapRequest) -> String {
         request.topic,
         request.level,
         request.goal,
-        request.weekly_hours,
-        request.total_weeks,
+        10, // AI 自主评估时间，此处用默认值
+        8,
         request.difficulty
     )
 }
@@ -456,9 +362,11 @@ impl ClaudeProvider {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum ClaudeContentBlock {
-    Text { text: String },
+struct ClaudeContentBlock {
+    #[serde(rename = "type")]
+    block_type: String,
+    #[serde(default)]
+    text: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -512,15 +420,13 @@ impl AiProvider for ClaudeProvider {
 
         let content = claude_response
             .content
-            .first()
-            .ok_or("无响应内容")?;
-
-        let content_str = match content {
-            ClaudeContentBlock::Text { text } => text.clone(),
-        };
+            .iter()
+            .find(|b| b.block_type == "text" && b.text.is_some())
+            .and_then(|b| b.text.as_ref())
+            .ok_or("无文本响应内容")?;
 
         // Parse the JSON response
-        parse_roadmap_json(&content_str)
+        parse_roadmap_json(content.as_str())
     }
 
     async fn chat(
@@ -569,14 +475,12 @@ impl AiProvider for ClaudeProvider {
 
         let content = claude_response
             .content
-            .first()
-            .ok_or("无响应内容")?;
+            .iter()
+            .find(|b| b.block_type == "text" && b.text.is_some())
+            .and_then(|b| b.text.as_ref())
+            .ok_or("无文本响应内容")?;
 
-        let content_str = match content {
-            ClaudeContentBlock::Text { text } => text.clone(),
-        };
-
-        Ok(content_str)
+        Ok(content.clone())
     }
 
     fn provider_type(&self) -> AiProviderType {
@@ -924,7 +828,7 @@ pub fn get_provider_with_config(provider_name: &str, base_url: &str, model: &str
 }
 pub fn build_outline_prompt(topic: &str, goal: &str, level: &str) -> String {
     format!(
-        r#"你是一位精通「过关模式」的学习路线设计师。请为以下学习主题生成一个5-8阶段的路线大纲。
+        r#"你是一位精通「过关模式」的学习路线设计师。请为以下学习主题生成一个5-8阶段的路线大纲，并自主评估学习时间。
 
 ## 学习主题（必须严格围绕此主题）
 {}
@@ -935,18 +839,32 @@ pub fn build_outline_prompt(topic: &str, goal: &str, level: &str) -> String {
 ## 当前水平
 {}
 
+## 时间评估
+根据主题复杂度和学习者水平，请自主估算：
+- suggested_weekly_hours：建议每周投入的小时数
+  - 入门级别：5-8 小时/周
+  - 进阶级别：8-15 小时/周
+  - 高级/专业级：15-25 小时/周
+- suggested_total_weeks：完成整个路线需要的周数
+  - 短期（简单主题，入门水平）：4-6 周
+  - 中期（中等主题，进阶水平）：6-10 周
+  - 长期（复杂主题，高级水平）：10-20 周
+- estimated_total_hours：总学习小时数（suggested_weekly_hours × suggested_total_weeks）
+
 ## 严格要求
 - 所有的阶段内容都必须围绕「{}」这个主题，绝不能偏题
-- 例如主题是「Java Web」，所有阶段必须是 Java Web 相关（如 Servlet、JSP、Spring、SpringBoot、数据库连接、Web 安全等）
-- 不得生成其他技术领域的内容
 - 生成 5-8 个阶段，覆盖从基础到深入的完整学习路径
 - 每个阶段只输出：标题 + 简短描述（50-100字）
 - 不包含任务细节、不包含测验、不包含资源
 - 主题递进：基础概念 → 核心原理 → 实践应用 → 高级技巧 → 综合项目
 - 最后1-2个阶段应为综合项目
+- **JSON 转义注意**：brief 字段里**禁止**用 `\$`、`\#`、`\&` 等非法转义，直接用原字符即可
 
 ## 输出 JSON 格式（严格遵循）
 {{
+  "suggested_weekly_hours": 10,
+  "suggested_total_weeks": 8,
+  "estimated_total_hours": 80,
   "stages": [
     {{"order": 1, "title": "阶段标题", "brief": "该阶段简要描述（50-100字，说明学什么、为什么重要）"}},
     {{"order": 2, "title": "阶段标题", "brief": "..."}}
@@ -1059,6 +977,7 @@ pub fn build_stage_outline_only_prompt(
 - 所有任务必须围绕「{topic}」和本阶段主题
 - 生成 4-6 个学习任务（reading/视频/练习/项目）
 - 只输出任务标题和类型，不输出任何 content、code_example、exercise、resources
+- **JSON 转义注意**：stage_description 字段里**禁止**用 `\$`、`\#`、`\&` 等非法转义，直接用原字符即可
 
 ## 输出 JSON 格式（严格遵循）
 {{
@@ -1094,6 +1013,7 @@ pub fn build_task_content_prompt(
 - 所有内容必须围绕「{topic}」和当前任务主题
 - code_example 必须与主题「{topic}」相关（如果是 Java Web 主题，代码必须是 Java/Spring 等）
 - content 200-400 字 Markdown：概念解释、原理说明、应用场景、注意事项
+- **JSON 转义注意**：content/code_example/exercise/snippet 字段里**禁止**用 `\$`、`\#`、`\&` 等 Markdown 转义（在 JSON 字符串里是非法的）；直接用 `$`、`#`、`&` 等原字符即可；需要换行用 `\n`
 
 ## 资源推荐要求（非常重要）
 

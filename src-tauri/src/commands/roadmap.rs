@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::{Emitter, State};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 
@@ -50,6 +50,8 @@ async fn call_openai_compatible(
     max_tokens: u32,
 ) -> Result<String, String> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let prompt_chars = system_prompt.len() + user_prompt.len();
+    let est_input_tokens = prompt_chars / 2; // 粗略估计：中文 ~2 chars/token
 
     let body = serde_json::json!({
         "model": model,
@@ -61,6 +63,7 @@ async fn call_openai_compatible(
         "max_tokens": max_tokens,
     });
 
+    info!("  📤 发送请求 → 模型={model}, 输入~{est_input_tokens}tok, max_output={max_tokens}tok");
     let t0 = Instant::now();
     let resp = client
         .post(&url)
@@ -79,10 +82,17 @@ async fn call_openai_compatible(
     }
 
     let raw = resp.text().await.map_err(|e| format!("读取响应失败：{}", e))?;
-    info!("AI 响应接收完成，耗时 {:.1}s，长度 {} 字符", t0.elapsed().as_secs_f64(), raw.len());
+    info!("  📥 响应接收 ← 耗时 {:.1}s, 长度 {} 字符", t0.elapsed().as_secs_f64(), raw.len());
 
     let chat_value: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| format!("解析响应 JSON 失败：{}", e))?;
+
+    let finish_reason = chat_value["choices"][0]["finish_reason"]
+        .as_str()
+        .unwrap_or("unknown");
+    if finish_reason == "length" {
+        warn!("⚠ 模型因 token 限制截断了响应 (finish_reason=length)，返回内容可能不完整");
+    }
 
     chat_value["choices"][0]["message"]["content"]
         .as_str()
@@ -93,14 +103,17 @@ async fn call_openai_compatible(
 async fn call_claude(
     client: &reqwest::Client,
     api_key: &str,
+    model: &str,
     system_prompt: &str,
     user_prompt: &str,
     max_tokens: u32,
 ) -> Result<String, String> {
     let url = "https://api.anthropic.com/v1/messages";
+    let prompt_chars = system_prompt.len() + user_prompt.len();
+    let est_input_tokens = prompt_chars / 2;
 
     let body = serde_json::json!({
-        "model": "claude-sonnet-4-20250514",
+        "model": model,
         "max_tokens": max_tokens,
         "system": system_prompt,
         "messages": [
@@ -108,6 +121,7 @@ async fn call_claude(
         ],
     });
 
+    info!("  📤 发送请求 → Claude/{model}, 输入~{est_input_tokens}tok, max_output={max_tokens}tok");
     let t0 = Instant::now();
     let resp = client
         .post(url)
@@ -115,7 +129,7 @@ async fn call_claude(
         .header("anthropic-version", "2023-06-01")
         .header("Content-Type", "application/json")
         .json(&body)
-        .timeout(std::time::Duration::from_secs(90))
+        .timeout(std::time::Duration::from_secs(120))
         .send()
         .await
         .map_err(|e| format!("Claude 请求失败：{}", e))?;
@@ -126,10 +140,19 @@ async fn call_claude(
     }
 
     let raw = resp.text().await.map_err(|e| format!("读取 Claude 响应失败：{}", e))?;
-    info!("Claude 响应接收完成，耗时 {:.1}s，长度 {} 字符", t0.elapsed().as_secs_f64(), raw.len());
+    info!("  📥 响应接收 ← 耗时 {:.1}s, 长度 {} 字符", t0.elapsed().as_secs_f64(), raw.len());
 
     let value: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| format!("解析 Claude 响应 JSON 失败：{}", e))?;
+
+    let stop_reason = value["stop_reason"]
+        .as_str()
+        .unwrap_or("unknown");
+    if stop_reason == "max_tokens" {
+        let err = "Claude 因 token 限制截断了响应 (stop_reason=max_tokens)，返回内容不完整";
+        error!("⚠ {}", err);
+        return Err(err.to_string());
+    }
 
     value["content"][0]["text"]
         .as_str()
@@ -139,7 +162,7 @@ async fn call_claude(
 
 async fn call_ai(
     client: &reqwest::Client,
-    provider: &str,
+    provider_type: &str,
     base_url: &str,
     model: &str,
     api_key: &str,
@@ -147,9 +170,9 @@ async fn call_ai(
     user_prompt: &str,
     max_tokens: u32,
 ) -> Result<String, String> {
-    match provider.to_lowercase().as_str() {
-        "claude" | "anthropic" => {
-            call_claude(client, api_key, system_prompt, user_prompt, max_tokens).await
+    match provider_type.to_lowercase().as_str() {
+        "anthropic" | "claude" => {
+            call_claude(client, api_key, model, system_prompt, user_prompt, max_tokens).await
         }
         _ => {
             call_openai_compatible(client, base_url, model, api_key, system_prompt, user_prompt, max_tokens).await
@@ -255,13 +278,32 @@ pub async fn generate_roadmap(
             .ok_or_else(|| format!("{} 的 API Key 未找到，请在设置中配置 API Key", settings.ai_provider))?
     };
 
-    let (base_url_opt, model_opt, _provider_type) = {
+    let (base_url_opt, model_opt, provider_type_opt) = {
         let db = state.db.lock().await;
         db.get_api_config(&settings.ai_provider).await?
     };
 
-    let base_url = base_url_opt.unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-    let model = model_opt.unwrap_or_else(|| "gpt-4o".to_string());
+    // 决定 provider_type：优先用保存的，否则按 settings.ai_provider 推断
+    let provider_type = provider_type_opt
+        .clone()
+        .unwrap_or_else(|| {
+            let p = settings.ai_provider.to_lowercase();
+            if p == "claude" || p == "anthropic" { "anthropic".to_string() } else { "openai".to_string() }
+        });
+
+    // Claude 使用自己的官方端点和默认模型
+    let (base_url, model) = if provider_type == "anthropic" {
+        let m = model_opt.unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        if base_url_opt.is_some() {
+            warn!("Claude 模式下忽略自定义 base_url，固定使用 https://api.anthropic.com");
+        }
+        ("https://api.anthropic.com".to_string(), m)
+    } else {
+        (
+            base_url_opt.unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+            model_opt.unwrap_or_else(|| "gpt-4o".to_string()),
+        )
+    };
     let provider = settings.ai_provider.clone();
 
     let client = reqwest::Client::builder()
@@ -269,9 +311,11 @@ pub async fn generate_roadmap(
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败：{}", e))?;
 
-    info!("模型：{} | base_url：{} | provider：{} | 并发数：6", model, base_url, provider);
+    info!("模型：{} | base_url：{} | provider：{} | provider_type：{} | 并发数：6", model, base_url, provider, provider_type);
 
-    // 2. Emit started
+    // 2. Layer 1: Coordinator — generate outline
+    info!("");
+    info!("═══ Layer 1: Outline（大纲生成）═══");
     emit_roadmap_progress(&app_handle, "started", 0, 0, None, "正在生成学习路线大纲...");
 
     // 3. Coordinator: generate outline
@@ -279,27 +323,34 @@ pub async fn generate_roadmap(
     let outline_t0 = Instant::now();
     let outline_prompt = build_outline_prompt(&params.topic, &params.goal, &params.level);
     let outline_raw = call_ai(
-        &client, &provider, &base_url, &model, &api_key,
+        &client, &provider_type, &base_url, &model, &api_key,
         "你是一位学习路线图设计专家。始终返回符合要求格式的有效 JSON。",
         &outline_prompt, 2000,
     ).await.map_err(|e| format!("大纲生成失败：{}", e))?;
 
     info!("→ [大纲] 响应已接收，耗时 {:.1}s，开始解析...", outline_t0.elapsed().as_secs_f64());
 
-    let outlines = parse_outline_response(&outline_raw)
+    let outline_result = parse_outline_response(&outline_raw)
         .map_err(|e| format!("解析大纲失败：{}", e))?;
 
+    let outlines = outline_result.stages;
+    let ai_weekly_hours = outline_result.suggested_weekly_hours;
+    let ai_total_weeks = outline_result.suggested_total_weeks;
     let total = outlines.len();
-    info!("→ [大纲] 解析成功！共 {} 个阶段：", total);
+    info!("→ [大纲] 解析成功！共 {} 个阶段", total);
+    info!("→ [大纲] AI 建议：{}/周 × {}周 = {:.0}h 总学习时间", ai_weekly_hours, ai_total_weeks, outline_result.estimated_total_hours);
     for o in &outlines {
         info!("    阶段{}: {}", o.order, o.title);
     }
 
-    // 4. Emit outline complete
+    // 4. Layer 2: Stage skeletons — N agents parallel
     emit_roadmap_progress(
         &app_handle, "outline_complete", 0, total, None,
-        &format!("大纲生成完成，共 {} 个阶段，正在并行生成各阶段详情...", total),
+        &format!("大纲生成完成，共 {} 个阶段，AI 建议 {}/周 × {}周", total, ai_weekly_hours, ai_total_weeks),
     );
+
+    info!("");
+    info!("═══ Layer 2: Stage Skeletons（阶段骨架 {total} 并发）═══");
 
     let _all_titles: Vec<String> = outlines.iter().map(|o| o.title.clone()).collect();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(6));
@@ -318,7 +369,7 @@ pub async fn generate_roadmap(
         let base_url = base_url.clone();
         let model = model.clone();
         let api_key = api_key.clone();
-        let provider = provider.clone();
+        let provider_type_t = provider_type.clone();
         let level = params.level.clone();
         let order = outline.order;
         let title = outline.title.clone();
@@ -331,7 +382,7 @@ pub async fn generate_roadmap(
 
             let prompt = build_stage_outline_only_prompt(&title, &level, order, &title, &brief);
             let raw = call_ai(
-                &client, &provider, &base_url, &model, &api_key,
+                &client, &provider_type_t, &base_url, &model, &api_key,
                 "你是学习路线图设计专家。严格按 JSON 格式返回。",
                 &prompt, 3000,
             ).await.ok();
@@ -359,10 +410,11 @@ pub async fn generate_roadmap(
     info!("→ [Layer 2] 完成：{} 阶段骨架", stage_skeletons.len());
 
     // ============================================================
-    // LAYER 3: 任务内容 — M×N 个 Agent 并行，每个生成单个任务内容
+    // LAYER 3: Task content + resources + flashcards — M agents parallel
     // ============================================================
     let total_task_jobs: usize = stage_skeletons.iter().map(|s| s.task_outlines.len()).sum();
-    info!("→ [Layer 3] 启动 {} 个任务内容 Agent...", total_task_jobs);
+    info!("");
+    info!("═══ Layer 3: Task Content（{total_task_jobs} 个任务并行，上限 6）═══");
 
     let mut task_contents: Vec<TaskContent> = Vec::new();
     let mut content_handles = Vec::new();
@@ -373,7 +425,7 @@ pub async fn generate_roadmap(
             let base_url = base_url.clone();
             let model = model.clone();
             let api_key = api_key.clone();
-            let provider = provider.clone();
+            let provider_type_t = provider_type.clone();
             let stage_title = stage.title.clone();
             let stage_desc = stage.description.clone();
             let task_title = task.title.clone();
@@ -385,7 +437,7 @@ pub async fn generate_roadmap(
                 let t0 = Instant::now();
                 let prompt = build_task_content_prompt(&stage_title, &stage_title, &stage_desc, &task_title, &task_type);
                 let raw = call_ai(
-                    &client, &provider, &base_url, &model, &api_key,
+                    &client, &provider_type_t, &base_url, &model, &api_key,
                     "你是学习内容专家。严格按 JSON 格式返回。",
                     &prompt, 4000,
                 ).await.ok();
@@ -410,15 +462,18 @@ pub async fn generate_roadmap(
     info!("→ [Layer 3] 完成：{} 任务内容", task_contents.len());
 
     // ============================================================
-    // 聚合 — 把 Layer 2 + Layer 3 合并为 StageDetail
+    // 聚合 + DB 写入
     // ============================================================
     let mut stage_details: Vec<StageDetail> = Vec::new();
     let fallback_count = stage_skeletons.iter().filter(|s| s.task_outlines.is_empty()).count();
     let total_tasks_built: usize = task_contents.len();
     let total_resources: usize = task_contents.iter().map(|c| c.resources.len()).sum();
     let total_flashcards: usize = task_contents.iter().map(|c| c.flashcards.len()).sum();
-    info!("→ [汇总] 开始合并：{} 阶段, {} 任务, {} 资源, {} 记忆卡 | 三层总耗时 {:.1}s",
-        stage_skeletons.len(), total_tasks_built, total_resources, total_flashcards, layer_t0.elapsed().as_secs_f64());
+    info!("");
+    info!("══════════════════════════════════════");
+    info!("  📊 三层汇总：{} 阶段, {} 任务, {} 资源, {} 记忆卡, {} 占位 | 总耗时 {:.1}s",
+        stage_skeletons.len(), total_tasks_built, total_resources, total_flashcards, fallback_count, layer_t0.elapsed().as_secs_f64());
+    info!("══════════════════════════════════════");
 
     for stage in &stage_skeletons {
         let mut tasks: Vec<TaskDetail> = Vec::new();
@@ -534,12 +589,12 @@ pub async fn generate_roadmap(
     // 7. Merge into DB models
     let roadmap_id = Uuid::new_v4().to_string();
 
-    let estimated_hours: f64 = stage_details.iter().map(|d| d.tasks.len() as f64 * 1.5).sum();
+    let estimated_hours = outline_result.estimated_total_hours;
     let roadmap_title = format!("{} 学习路线", params.topic);
     let roadmap_desc = format!(
-        "为「{}」水平学习者定制的 {} 路线，共 {} 个阶段，{} 个学习任务",
-        params.level, params.topic, total,
-        stage_details.iter().map(|d| d.tasks.len()).sum::<usize>(),
+        "AI 建议 {}/周 × {}周，共 {:.0} 小时 | {} 个阶段，{} 个任务",
+        ai_weekly_hours, ai_total_weeks, estimated_hours,
+        total, stage_details.iter().map(|d| d.tasks.len()).sum::<usize>(),
     );
 
     let roadmap = Roadmap {

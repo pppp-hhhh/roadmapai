@@ -85,8 +85,6 @@ export interface RoadmapRequest {
   topic: string;
   level: string;
   goal: string;
-  weekly_hours: number;
-  total_weeks: number;
   difficulty: string;
 }
 

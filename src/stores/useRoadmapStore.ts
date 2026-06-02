@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { Roadmap, RoadmapRequest, Stage, QuizResult, ProgressEvent, Resource } from '../types';
 
 interface RoadmapState {
@@ -52,13 +53,18 @@ export const useRoadmapStore = create<RoadmapState>((set, get) => ({
 
   generateRoadmap: async (params: RoadmapRequest) => {
     set({ isGenerating: true, error: null, progress: null });
+    const unlisten = await listen<ProgressEvent>('roadmap-progress', (e) => {
+      set({ progress: e.payload });
+    });
     try {
       const result = await invoke<any>('generate_roadmap', { params });
-      set({ isGenerating: false });
+      set({ isGenerating: false, progress: null });
+      unlisten();
       await get().fetchRoadmaps();
       return result.id;
     } catch (error) {
-      set({ error: String(error), isGenerating: false });
+      set({ error: String(error), isGenerating: false, progress: null });
+      unlisten();
       throw error;
     }
   },

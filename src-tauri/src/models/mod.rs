@@ -126,8 +126,6 @@ pub struct RoadmapRequest {
     pub topic: String,
     pub level: String,
     pub goal: String,
-    pub weekly_hours: i32,
-    pub total_weeks: i32,
     pub difficulty: String,
 }
 

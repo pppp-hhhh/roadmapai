@@ -9,6 +9,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import StudyTimer from './StudyTimer';
 
 const navItems = [
   { to: '/', icon: Home, label: '首页' },
@@ -62,6 +63,8 @@ export default function Layout() {
       <main className="flex-1 overflow-hidden">
         <Outlet />
       </main>
+
+      <StudyTimer />
     </div>
   );
 }
