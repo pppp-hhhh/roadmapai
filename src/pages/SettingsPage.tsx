@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Key, Settings as SettingsIcon, Check, X, Loader2, Save, ChevronDown, Sun, Moon } from 'lucide-react';
+import { Key, Settings as SettingsIcon, Check, X, Loader2, Save, ChevronDown, Sun, Moon, Search } from 'lucide-react';
 import { useSettingsStore } from '../stores/useSettingsStore';
 
 export default function SettingsPage() {
@@ -27,6 +27,8 @@ export default function SettingsPage() {
     providerType: 'openai',
   });
   const [showKey, setShowKey] = useState(false);
+  const [showTavilyKey, setShowTavilyKey] = useState(false);
+  const [tavilyKey, setTavilyKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showProviderDropdown, setShowProviderDropdown] = useState(false);
@@ -73,6 +75,14 @@ export default function SettingsPage() {
       } catch {
         // Config not found
       }
+
+      // Load Tavily key
+      try {
+        const key = await getApiKey('tavily');
+        if (key) setTavilyKey(key);
+      } catch {
+        // Key not found
+      }
     };
     loadConfig();
   }, [getApiKey, getApiConfig]);
@@ -86,6 +96,9 @@ export default function SettingsPage() {
       await saveApiKey(config.providerType, config.apiKey);
       await saveApiConfig(config.providerType, config.baseUrl, config.model, config.providerType);
       setAiProvider(config.providerType);
+
+      // Save Tavily key
+      await saveApiKey('tavily', tavilyKey);
 
       setTestResult({ success: true, message: '设置已成功保存！' });
     } catch (e) {
@@ -287,6 +300,44 @@ export default function SettingsPage() {
                   <span className="font-medium">{testResult.message}</span>
                 </div>
               )}
+            </div>
+          </section>
+
+          {/* Tavily Resource Search */}
+          <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center">
+                <Search size={20} className="text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-gray-900 dark:text-white">资源搜索</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Tavily API — 自动搜索真实学习资源</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Tavily API Key
+              </label>
+              <div className="relative">
+                <input
+                  type={showTavilyKey ? 'text' : 'password'}
+                  value={tavilyKey}
+                  onChange={e => setTavilyKey(e.target.value)}
+                  placeholder="tvly-..."
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowTavilyKey(!showTavilyKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  {showTavilyKey ? '隐藏' : '显示'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                在 <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" className="text-purple-500 hover:underline">tavily.com</a> 免费注册获取。配置后生成路线时将自动查找真实可访问的学习链接。
+              </p>
             </div>
           </section>
 

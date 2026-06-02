@@ -62,6 +62,7 @@ pub fn run() {
             commands::roadmap::add_resource,
             commands::roadmap::update_resource,
             commands::roadmap::delete_resource,
+            commands::roadmap::search_resource,
             commands::flashcard::create_flashcard,
             commands::flashcard::get_due_flashcards,
             commands::flashcard::get_new_flashcards,

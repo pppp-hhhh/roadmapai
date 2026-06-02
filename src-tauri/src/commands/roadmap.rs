@@ -11,6 +11,7 @@ use crate::services::{
     build_outline_prompt, build_stage_outline_only_prompt,
     build_task_content_prompt,
 };
+use crate::services::tavily;
 use crate::AppState;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -454,6 +455,82 @@ pub async fn generate_roadmap(
         }
     }
 
+    // ============================================================
+    // 资源增强 — 用 Tavily 搜索真实链接替换 LLM 编造的资源
+    // ============================================================
+    let tavily_api_key = {
+        let db = state.db.lock().await;
+        db.get_api_key("tavily").await.unwrap_or(None)
+    };
+
+    if let Some(tavily_key) = &tavily_api_key {
+        if !tavily_key.is_empty() {
+            emit_roadmap_progress(
+                &app_handle, "enriching", 0, stage_details.len(), None,
+                "正在搜索真实学习资源...",
+            );
+            info!("→ [Tavily] 开始为 {} 个阶段搜索学习资源", stage_details.len());
+
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(4));
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .map_err(|e| format!("创建 Tavily 客户端失败: {}", e))?;
+
+            let mut enrich_handles = Vec::new();
+            for stage in &stage_details {
+                for task in &stage.tasks {
+                    let sem = semaphore.clone();
+                    let client = client.clone();
+                    let key = tavily_key.clone();
+                    let topic = params.topic.clone();
+                    let task_title = task.title.clone();
+                    let task_type = task.task_type.clone();
+
+                    enrich_handles.push(tokio::spawn(async move {
+                        let _permit = sem.acquire().await.expect("信号量");
+                        let query = tavily::build_search_query(&topic, &task_title, &task_type);
+                        tavily::search_resources(&client, &key, &query, 4).await
+                    }));
+                }
+            }
+
+            let mut enriched_results: Vec<Result<Vec<crate::services::parallel::ResourceDetail>, String>> = vec![];
+            for h in enrich_handles {
+                match h.await {
+                    Ok(result) => enriched_results.push(result),
+                    Err(_) => enriched_results.push(Err("Join 错误".to_string())),
+                }
+            }
+
+            let mut result_iter = enriched_results.into_iter();
+            for stage in &mut stage_details {
+                for task in &mut stage.tasks {
+                    if let Some(result) = result_iter.next() {
+                        match result {
+                            Ok(resources) if !resources.is_empty() => {
+                                info!("  [Tavily] ✔「{}」→ {} 个资源", task.title, resources.len());
+                                task.resources = resources;
+                            }
+                            Ok(_) => {
+                                info!("  [Tavily] ○「{}」→ 无结果，保留原资源", task.title);
+                            }
+                            Err(e) => {
+                                info!("  [Tavily] ✘「{}」→ {}，保留原资源", task.title, e);
+                            }
+                        }
+                    }
+                }
+            }
+            info!("→ [Tavily] 资源搜索完成");
+
+            emit_roadmap_progress(
+                &app_handle, "enrich_done", stage_details.len(), stage_details.len(), None,
+                "资源搜索完成，正在保存...",
+            );
+        }
+    }
+
     // 7. Merge into DB models
     let roadmap_id = Uuid::new_v4().to_string();
 
@@ -803,4 +880,24 @@ pub async fn delete_resource(
     db.delete_resource(&id).await?;
     info!("删除学习资源：{}", id);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn search_resource(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<crate::services::parallel::ResourceDetail>, String> {
+    let api_key = {
+        let db = state.db.lock().await;
+        db.get_api_key("tavily")
+            .await?
+            .ok_or_else(|| "Tavily API Key 未配置，请在设置中填写".to_string())?
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    tavily::search_resources(&client, &api_key, &query, 5).await
 }
