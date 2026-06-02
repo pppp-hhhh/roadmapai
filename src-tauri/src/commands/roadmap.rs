@@ -89,6 +89,73 @@ async fn call_openai_compatible(
         .ok_or_else(|| "响应中没有 choices[0].message.content".to_string())
 }
 
+async fn call_claude(
+    client: &reqwest::Client,
+    api_key: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    max_tokens: u32,
+) -> Result<String, String> {
+    let url = "https://api.anthropic.com/v1/messages";
+
+    let body = serde_json::json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": max_tokens,
+        "system": system_prompt,
+        "messages": [
+            {"role": "user", "content": user_prompt}
+        ],
+    });
+
+    let t0 = Instant::now();
+    let resp = client
+        .post(url)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(90))
+        .send()
+        .await
+        .map_err(|e| format!("Claude 请求失败：{}", e))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("Claude API 错误：{}", err_text));
+    }
+
+    let raw = resp.text().await.map_err(|e| format!("读取 Claude 响应失败：{}", e))?;
+    info!("Claude 响应接收完成，耗时 {:.1}s，长度 {} 字符", t0.elapsed().as_secs_f64(), raw.len());
+
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("解析 Claude 响应 JSON 失败：{}", e))?;
+
+    value["content"][0]["text"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Claude 响应中没有 content[0].text".to_string())
+}
+
+async fn call_ai(
+    client: &reqwest::Client,
+    provider: &str,
+    base_url: &str,
+    model: &str,
+    api_key: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    max_tokens: u32,
+) -> Result<String, String> {
+    match provider.to_lowercase().as_str() {
+        "claude" | "anthropic" => {
+            call_claude(client, api_key, system_prompt, user_prompt, max_tokens).await
+        }
+        _ => {
+            call_openai_compatible(client, base_url, model, api_key, system_prompt, user_prompt, max_tokens).await
+        }
+    }
+}
+
 fn stage_details_to_models(
     roadmap_id: String,
     details: Vec<StageDetail>,
@@ -194,13 +261,14 @@ pub async fn generate_roadmap(
 
     let base_url = base_url_opt.unwrap_or_else(|| "https://api.openai.com/v1".to_string());
     let model = model_opt.unwrap_or_else(|| "gpt-4o".to_string());
+    let provider = settings.ai_provider.clone();
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败：{}", e))?;
 
-    info!("模型：{} | base_url：{} | 并发数：6 | 大纲 tokens：2000 | 阶段 tokens：4000 | 超时：90s", model, base_url);
+    info!("模型：{} | base_url：{} | provider：{} | 并发数：6", model, base_url, provider);
 
     // 2. Emit started
     emit_roadmap_progress(&app_handle, "started", 0, 0, None, "正在生成学习路线大纲...");
@@ -209,8 +277,8 @@ pub async fn generate_roadmap(
     info!("→ [大纲] 正在请求 AI 生成大纲...");
     let outline_t0 = Instant::now();
     let outline_prompt = build_outline_prompt(&params.topic, &params.goal, &params.level);
-    let outline_raw = call_openai_compatible(
-        &client, &base_url, &model, &api_key,
+    let outline_raw = call_ai(
+        &client, &provider, &base_url, &model, &api_key,
         "你是一位学习路线图设计专家。始终返回符合要求格式的有效 JSON。",
         &outline_prompt, 2000,
     ).await.map_err(|e| format!("大纲生成失败：{}", e))?;
@@ -249,6 +317,7 @@ pub async fn generate_roadmap(
         let base_url = base_url.clone();
         let model = model.clone();
         let api_key = api_key.clone();
+        let provider = provider.clone();
         let level = params.level.clone();
         let order = outline.order;
         let title = outline.title.clone();
@@ -260,8 +329,8 @@ pub async fn generate_roadmap(
             info!("  [L2-阶段{}] 启动", order);
 
             let prompt = build_stage_outline_only_prompt(&title, &level, order, &title, &brief);
-            let raw = call_openai_compatible(
-                &client, &base_url, &model, &api_key,
+            let raw = call_ai(
+                &client, &provider, &base_url, &model, &api_key,
                 "你是学习路线图设计专家。严格按 JSON 格式返回。",
                 &prompt, 3000,
             ).await.ok();
@@ -303,6 +372,7 @@ pub async fn generate_roadmap(
             let base_url = base_url.clone();
             let model = model.clone();
             let api_key = api_key.clone();
+            let provider = provider.clone();
             let stage_title = stage.title.clone();
             let stage_desc = stage.description.clone();
             let task_title = task.title.clone();
@@ -313,8 +383,8 @@ pub async fn generate_roadmap(
                 let _permit = sem.acquire().await.expect("信号量获取失败");
                 let t0 = Instant::now();
                 let prompt = build_task_content_prompt(&stage_title, &stage_title, &stage_desc, &task_title, &task_type);
-                let raw = call_openai_compatible(
-                    &client, &base_url, &model, &api_key,
+                let raw = call_ai(
+                    &client, &provider, &base_url, &model, &api_key,
                     "你是学习内容专家。严格按 JSON 格式返回。",
                     &prompt, 4000,
                 ).await.ok();

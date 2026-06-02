@@ -908,7 +908,7 @@ impl AiProvider for CustomProvider {
 /// Get the appropriate AI provider instance
 pub fn get_provider(provider_name: &str) -> Box<dyn AiProvider> {
     match provider_name.to_lowercase().as_str() {
-        "claude" => Box::new(ClaudeProvider::new()),
+        "claude" | "anthropic" => Box::new(ClaudeProvider::new()),
         "gemini" => Box::new(GeminiProvider::new()),
         _ => Box::new(OpenAiProvider::new()),
     }
@@ -917,7 +917,7 @@ pub fn get_provider(provider_name: &str) -> Box<dyn AiProvider> {
 /// Get the appropriate AI provider instance with custom configuration
 pub fn get_provider_with_config(provider_name: &str, base_url: &str, model: &str) -> Box<dyn AiProvider> {
     match provider_name.to_lowercase().as_str() {
-        "claude" => Box::new(ClaudeProvider::new()),
+        "claude" | "anthropic" => Box::new(ClaudeProvider::new()),
         "gemini" => Box::new(GeminiProvider::new()),
         "custom" | "deepseek" | _ => Box::new(CustomProvider::new(base_url.to_string(), model.to_string())),
     }

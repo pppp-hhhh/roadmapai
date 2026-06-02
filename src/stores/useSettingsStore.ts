@@ -92,6 +92,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       setAiProvider: (provider: string) => {
         set({ ai_provider: provider });
+        invoke('set_ai_provider', { provider }).catch(() => {});
       },
     }),
     {

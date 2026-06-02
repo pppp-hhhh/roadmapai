@@ -54,6 +54,15 @@ pub async fn save_api_config(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn set_ai_provider(
+    state: State<'_, AppState>,
+    provider: String,
+) -> Result<(), String> {
+    let db = state.db.lock().await;
+    db.set_ai_provider(&provider).await
+}
+
 #[derive(Debug, Serialize)]
 pub struct ApiConfigResponse {
     pub base_url: String,

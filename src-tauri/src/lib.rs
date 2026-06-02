@@ -73,6 +73,7 @@ pub fn run() {
             commands::settings::save_api_config,
             commands::settings::get_api_config,
             commands::settings::test_connection,
+            commands::settings::set_ai_provider,
             commands::chat::chat_send,
         ])
         .run(tauri::generate_context!())

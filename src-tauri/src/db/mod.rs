@@ -605,6 +605,15 @@ impl Database {
         Ok(())
     }
 
+    pub async fn set_ai_provider(&self, provider: &str) -> Result<(), String> {
+        sqlx::query("UPDATE settings SET ai_provider = ? WHERE id = 'default'")
+            .bind(provider)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法更新 AI 提供商: {}", e))?;
+        Ok(())
+    }
+
     // ============ API Key DAO ============
 
     pub async fn save_api_key(&self, provider: &str, api_key: &str) -> Result<(), String> {

@@ -11,6 +11,7 @@ export default function SettingsPage() {
     saveApiConfig,
     getApiConfig,
     testConnection,
+    setAiProvider,
     error,
   } = useSettingsStore();
 
@@ -50,7 +51,7 @@ export default function SettingsPage() {
     const loadConfig = async () => {
       // Load API key
       try {
-        const key = await getApiKey('openai');
+        const key = await getApiKey(config.providerType);
         if (key) {
           setConfig(prev => ({ ...prev, apiKey: key }));
         }
@@ -60,13 +61,13 @@ export default function SettingsPage() {
 
       // Load custom config
       try {
-        const customConfig = await getApiConfig('openai');
+        const customConfig = await getApiConfig(config.providerType);
         if (customConfig) {
           setConfig(prev => ({
             ...prev,
             baseUrl: customConfig.baseUrl,
             model: customConfig.model,
-            providerType: customConfig.providerType as 'openai' | 'anthropic',
+            providerType: (customConfig.providerType || config.providerType) as 'openai' | 'anthropic',
           }));
         }
       } catch {
@@ -81,9 +82,10 @@ export default function SettingsPage() {
     setTestResult(null);
 
     try {
-      // Save API key and config
-      await saveApiKey('openai', config.apiKey);
-      await saveApiConfig('openai', config.baseUrl, config.model, config.providerType);
+      // Save API key and config under the selected provider
+      await saveApiKey(config.providerType, config.apiKey);
+      await saveApiConfig(config.providerType, config.baseUrl, config.model, config.providerType);
+      setAiProvider(config.providerType);
 
       setTestResult({ success: true, message: '设置已成功保存！' });
     } catch (e) {
@@ -104,10 +106,10 @@ export default function SettingsPage() {
 
     try {
       // Save for test
-      await saveApiKey('openai', config.apiKey);
-      await saveApiConfig('openai', config.baseUrl, config.model, config.providerType);
+      await saveApiKey(config.providerType, config.apiKey);
+      await saveApiConfig(config.providerType, config.baseUrl, config.model, config.providerType);
 
-      const success = await testConnection('openai', {
+      const success = await testConnection(config.providerType, {
         baseUrl: config.baseUrl,
         model: config.model,
         providerType: config.providerType,
@@ -175,6 +177,7 @@ export default function SettingsPage() {
                           type="button"
                           onClick={() => {
                             setConfig({ ...config, providerType: option.value as 'openai' | 'anthropic' });
+                            setAiProvider(option.value);
                             setShowProviderDropdown(false);
                           }}
                           className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
