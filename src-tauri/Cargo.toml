@@ -1,12 +1,12 @@
 [package]
-name = "ai-learning-planner"
+name = "roadmapai"
 version = "1.0.0"
-description = "AI Learning Route Planner - Desktop Application"
+description = "RoadmapAI - AI-powered learning roadmap generator"
 authors = ["Developer"]
 edition = "2021"
 
 [lib]
-name = "ai_learning_planner_lib"
+name = "roadmapai_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

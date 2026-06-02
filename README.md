@@ -1,6 +1,6 @@
 <p align="center">
-  <h1 align="center">AI Learning Route Planner</h1>
-  <p align="center">智能学习路线规划器 — AI 驱动的个性化学习路径生成器</p>
+  <h1 align="center">RoadmapAI</h1>
+  <p align="center">AI 驱动的个性化学习路线生成器</p>
 </p>
 
 <p align="center">
@@ -95,8 +95,8 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 
 ```bash
 # 克隆仓库
-git clone https://github.com/YOUR_USERNAME/ai-learning-planner.git
-cd ai-learning-planner
+git clone https://github.com/YOUR_USERNAME/roadmapai.git
+cd roadmapai
 
 # 安装前端依赖
 npm install
@@ -169,7 +169,7 @@ npm run tauri build
 
 ## 📄 许可证 / License
 
-MIT © AI Learning Planner
+MIT © RoadmapAI
 
 ---
 
@@ -177,5 +177,5 @@ MIT © AI Learning Planner
 
 - 应用语言界面为**中文**
 - API 密钥存储在本地 SQLite 数据库中，不会上传到任何服务器
-- 数据库文件位于系统应用数据目录（macOS: `~/Library/Application Support/com.ai-learning-planner.app/`）
+- 数据库文件位于系统应用数据目录（macOS: `~/Library/Application Support/com.roadmapai.app/`）
 - 无测试、无 CI — TypeScript 严格模式在 `npm run build` 时进行类型检查

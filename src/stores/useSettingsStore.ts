@@ -95,7 +95,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
     }),
     {
-      name: 'ai-learning-planner-settings',
+      name: 'roadmapai-settings',
       partialize: state => ({
         ai_provider: state.ai_provider,
         theme: state.theme,

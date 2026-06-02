@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    ai_learning_planner_lib::run();
+    roadmapai_lib::run();
 }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://v2.tauri.app/schemas/desktop.schema.json",
-  "productName": "AI Learning Planner",
+  "productName": "RoadmapAI",
   "version": "1.0.0",
-  "identifier": "com.ai-learning-planner.app",
+  "identifier": "com.roadmapai.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "AI Learning Route Planner",
+        "title": "RoadmapAI",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
