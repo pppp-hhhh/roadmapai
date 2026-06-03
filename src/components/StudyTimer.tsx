@@ -150,7 +150,10 @@ export default function StudyTimer() {
               <div className="text-xs text-primary-500 mt-1 animate-pulse">学习中...</div>
             )}
             {state.pausedAt !== null && remaining < state.totalSeconds && (
-              <div className="text-xs text-gray-400 mt-1">已暂停</div>
+              <div className="text-xs text-gray-400 mt-1">已暂停 · 关闭应用后计时将保留</div>
+            )}
+            {!isRunning && state.elapsedSeconds === 0 && (
+              <div className="text-xs text-gray-400 mt-1">专注学习计时器 · 数据自动保存</div>
             )}
           </div>
 

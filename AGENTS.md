@@ -1,30 +1,40 @@
 # AGENTS.md
 
-## Project overview
-Tauri 2 desktop app: React 18 + TypeScript + Vite frontend, Rust backend with SQLite (sqlx). AI-powered learning roadmap generator.
+## Project
+Tauri 2 desktop: React 18+TS+Vite frontend + Rust+SQLite(sqx) backend. AI learning roadmap generator with spaced repetition flashcards.
 
 ## Commands
+- `npm run tauri dev` — full dev (frontend+Rust)
+- `npm run tauri build` — production bundle → .app / .dmg
+- `npm run build` — frontend only (tsc+vite), no Rust
+- `npm run dev` — Vite only, Rust commands fail
+- `cargo check` — Rust lint, 0 warnings required
 
-| Task | Command |
-|---|---|
-| Frontend dev only (no backend) | `npm run dev` |
-| Full Tauri app (frontend + Rust + native window) | `npm run tauri dev` |
-| Production build (frontend type-check first) | `npm run build` |
-| Production Tauri bundle | `npm run tauri build` |
-| Preview built frontend | `npm run preview` |
+## Architecture (3-layer parallel generation)
 
-## Architecture
+```
+Layer 1 (1 call): Outline → N stages + time estimates
+Layer 2 (N calls): Stage skeleton → task titles + types  (并行 semaphore 6)
+Layer 3 (M×N calls): Task content → content+code+exercise+resources+flashcards  (并行)
+```
 
-- **Frontend** (`src/`): React SPA with React Router, Zustand stores, Tailwind CSS
-- **Backend** (`src-tauri/`): Rust — SQLite via sqlx, reqwest for AI APIs, tokio async runtime
-- **All data access goes through Tauri commands** — the frontend never touches the database directly
-- Tauri commands are registered in `src-tauri/src/lib.rs` and implemented under `src-tauri/src/commands/`
+Each API call uses `call_ai()` which dispatches by `provider_type`:
+- `"anthropic"` → `call_claude()` (direct Anthropic API)
+- anything else → `call_openai_compatible()` (OpenAI-compatible / DeepSeek / MiniMax)
 
-## Key quirks
+## Key Files
+- `commands/roadmap.rs` — generate_roadmap + CRUD + retry_stage
+- `services/ai.rs` — 3 prompt builders + AiProvider trait (for chat/settings)
+- `services/roadmap_parser.rs` — tolerant JSON parser (3-tier: strict→extract→regex)
+- `services/parallel.rs` — shared data structures
+- `services/tavily.rs` — Tavily search integration
 
-- **`npm run dev` runs Vite only** — no Rust backend, no database. Tauri commands will fail. Use `npm run tauri dev` for the real app.
-- **Vite uses strict port 5173** (`strictPort: true` in config) — fails if port is in use.
-- **No tests, no linter, no CI** in this repo. TypeScript `strict` + `noUnusedLocals`/`noUnusedParameters` enforced at build time via `tsc` in the `build` script.
-- **API keys are configured at runtime** in Settings UI, not via `.env` files.
-- **Production builds**: `sourcemap: false`, Rust LTO enabled, codegen-units=1.
-- **Windows subsystem** on release builds (`#![windows_subsystem = "windows"]` in main.rs) — no console window.
+## Critical Notes
+- `finish_reason=length` is non-fatal on Layer 1 (warn+continue), logged on other layers
+- `.ok()` is NEVER used on call_ai — errors must be logged before fallback
+- Layer 2 failure → empty task_outlines + StageDetail::fallback (not generic tasks)
+- Layer 3 failure → regex fallback for content field, empty for rest
+- Old `AiProvider` trait + `build_roadmap_prompt` are dead code but kept for chat/settings
+- Vite strictPort=5173, kill with `lsof -ti:5173 | xargs kill -9`
+- `cargo check` must be 0 warnings; `tsc --noEmit` must pass
+- No tests, no CI. TypeScript strict mode on build.

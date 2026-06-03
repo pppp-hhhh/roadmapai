@@ -1,7 +1,7 @@
 use crate::models::{Flashcard, Quiz, Resource, ResourceResponse, Roadmap, RoadmapRequest, RoadmapResponse, Stage, Task};
 
 use crate::services::parallel::{
-    FlashcardItem, StageDetail, StageOutlineOnly, TaskContent, TaskDetail, 
+    FlashcardItem, StageDetail, StageOutlineOnly, TaskContent, TaskDetail,
 };
 use crate::services::roadmap_parser::{
     parse_outline_response, parse_stage_outline_only_response,
@@ -91,7 +91,14 @@ async fn call_openai_compatible(
         .as_str()
         .unwrap_or("unknown");
     if finish_reason == "length" {
-        warn!("⚠ 模型因 token 限制截断了响应 (finish_reason=length)，返回内容可能不完整");
+        warn!("⚠ 模型因 token 限制截断了响应 (finish_reason=length)，尝试修复截断的 JSON...");
+    }
+
+    let reasoning = chat_value["choices"][0]["message"]["reasoning_content"]
+        .as_str()
+        .unwrap_or("");
+    if !reasoning.is_empty() {
+        info!("  💭 模型输出了 {} 字符推理内容（不计入最终结果）", reasoning.len());
     }
 
     chat_value["choices"][0]["message"]["content"]
@@ -321,11 +328,11 @@ pub async fn generate_roadmap(
     // 3. Coordinator: generate outline
     info!("→ [大纲] 正在请求 AI 生成大纲...");
     let outline_t0 = Instant::now();
-    let outline_prompt = build_outline_prompt(&params.topic, &params.goal, &params.level);
+    let outline_prompt = build_outline_prompt(&params.topic, &params.goal, &params.level, &params.difficulty);
     let outline_raw = call_ai(
         &client, &provider_type, &base_url, &model, &api_key,
         "你是一位学习路线图设计专家。始终返回符合要求格式的有效 JSON。",
-        &outline_prompt, 2000,
+        &outline_prompt, 4000,
     ).await.map_err(|e| format!("大纲生成失败：{}", e))?;
 
     info!("→ [大纲] 响应已接收，耗时 {:.1}s，开始解析...", outline_t0.elapsed().as_secs_f64());
@@ -362,7 +369,7 @@ pub async fn generate_roadmap(
     info!("→ [Layer 2] 启动 {} 个阶段骨架 Agent（并发上限 6）...", total);
 
     let mut stage_skeletons: Vec<StageOutlineOnly> = Vec::new();
-    let mut skeleton_handles = Vec::new();
+    let mut skeleton_handles: Vec<tokio::task::JoinHandle<Result<StageOutlineOnly, String>>> = Vec::new();
     for outline in outlines {
         let sem = semaphore.clone();
         let client = client.clone();
@@ -371,6 +378,7 @@ pub async fn generate_roadmap(
         let api_key = api_key.clone();
         let provider_type_t = provider_type.clone();
         let level = params.level.clone();
+        let topic = params.topic.clone();
         let order = outline.order;
         let title = outline.title.clone();
         let brief = outline.brief.clone();
@@ -380,12 +388,15 @@ pub async fn generate_roadmap(
             let t0 = Instant::now();
             info!("  [L2-阶段{}] 启动", order);
 
-            let prompt = build_stage_outline_only_prompt(&title, &level, order, &title, &brief);
-            let raw = call_ai(
+            let prompt = build_stage_outline_only_prompt(&topic, &level, order, &title, &brief);
+            let raw = match call_ai(
                 &client, &provider_type_t, &base_url, &model, &api_key,
                 "你是学习路线图设计专家。严格按 JSON 格式返回。",
                 &prompt, 3000,
-            ).await.ok();
+            ).await {
+                Ok(r) => Some(r),
+                Err(e) => { warn!("  [L2-阶段{}] ✘ AI 调用失败：{}", order, e); None }
+            };
 
             if let Some(raw) = raw {
                 match parse_stage_outline_only_response(&raw, order, &title) {
@@ -397,7 +408,14 @@ pub async fn generate_roadmap(
                     Err(e) => warn!("  [L2-阶段{}] ✘ 解析失败：{}", order, e),
                 }
             }
-            Err::<StageOutlineOnly, String>(format!("L2 阶段{}失败", order))
+            // Fallback: empty task outlines, aggregation will make it a proper fallback stage
+            warn!("  [L2-阶段{}] ⚠ AI 生成失败，阶段将标记为占位", order);
+            Ok(StageOutlineOnly {
+                order,
+                title: title.clone(),
+                description: format!("本阶段目标：{}", brief),
+                task_outlines: vec![],
+            })
         }));
     }
 
@@ -436,11 +454,14 @@ pub async fn generate_roadmap(
                 let _permit = sem.acquire().await.expect("信号量获取失败");
                 let t0 = Instant::now();
                 let prompt = build_task_content_prompt(&stage_title, &stage_title, &stage_desc, &task_title, &task_type);
-                let raw = call_ai(
+                let raw = match call_ai(
                     &client, &provider_type_t, &base_url, &model, &api_key,
                     "你是学习内容专家。严格按 JSON 格式返回。",
-                    &prompt, 4000,
-                ).await.ok();
+                    &prompt, 10000,
+                ).await {
+                    Ok(r) => Some(r),
+                    Err(e) => { warn!("  [L3-任务{}] ✘ AI 调用失败：{}", order, e); None }
+                };
 
                 if let Some(raw) = raw {
                     if let Ok(c) = parse_task_content_response(&raw, order, &task_title, &task_type) {
@@ -938,21 +959,171 @@ pub async fn delete_resource(
 }
 
 #[tauri::command]
-pub async fn search_resource(
+pub async fn retry_stage(
     state: State<'_, AppState>,
-    query: String,
-) -> Result<Vec<crate::services::parallel::ResourceDetail>, String> {
+    _app_handle: tauri::AppHandle,
+    stage_id: String,
+) -> Result<crate::models::StageResponse, String> {
+    info!("正在重新生成阶段：{}", stage_id);
+
+    // Load settings + config
+    let settings = { let db = state.db.lock().await; db.get_settings().await? };
     let api_key = {
         let db = state.db.lock().await;
-        db.get_api_key("tavily")
-            .await?
-            .ok_or_else(|| "Tavily API Key 未配置，请在设置中填写".to_string())?
+        db.get_api_key(&settings.ai_provider).await?
+            .ok_or_else(|| format!("{} 的 API Key not found", settings.ai_provider))?
     };
+    let (base_url_opt, model_opt, provider_type_opt) = {
+        let db = state.db.lock().await; db.get_api_config(&settings.ai_provider).await?
+    };
+    let provider_type = provider_type_opt.unwrap_or_else(|| "openai".to_string());
+    let base_url = base_url_opt.unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+    let model = model_opt.unwrap_or_else(|| "gpt-4o".to_string());
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+        .timeout(std::time::Duration::from_secs(300))
+        .build().map_err(|e| format!("创建 HTTP 客户端失败：{}", e))?;
 
-    tavily::search_resources(&client, &api_key, &query, 5).await
+    // Get stage + roadmap context
+    let (stage, roadmap) = {
+        let db = state.db.lock().await;
+        let s = db.get_stage_by_id(&stage_id).await?.ok_or("未找到阶段")?;
+        let r = db.get_roadmap(&s.roadmap_id).await?.ok_or("未找到路线")?;
+        (s, r)
+    };
+
+    // Layer 2: generate task outlines for this stage
+    info!("  [重试 L2] 生成阶段「{}」的任务骨架...", stage.name);
+    let outline_prompt = build_stage_outline_only_prompt(
+        &roadmap.title, "中级", stage.order as usize,
+        &stage.name, &stage.objective,
+    );
+    let raw = call_ai(
+        &client, &provider_type, &base_url, &model, &api_key,
+        "你是学习路线图设计专家。严格按 JSON 格式返回。",
+        &outline_prompt, 3000,
+    ).await.map_err(|e| format!("L2 失败：{}", e))?;
+
+    let stage_outline = crate::services::roadmap_parser::parse_stage_outline_only_response(&raw, stage.order as usize, &stage.name)
+        .map_err(|e| format!("解析失败：{}", e))?;
+
+    info!("  [重试 L2] ✔ {} 个任务骨架", stage_outline.task_outlines.len());
+
+    // Layer 3: generate content for each task
+    let mut task_contents: Vec<TaskContent> = Vec::new();
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(3));
+    let mut handles = Vec::new();
+
+    for task in &stage_outline.task_outlines {
+        let sem = semaphore.clone();
+        let client = client.clone();
+        let base_url = base_url.clone();
+        let model = model.clone();
+        let api_key = api_key.clone();
+        let provider_type = provider_type.clone();
+        let stage_title = stage_outline.title.clone();
+        let stage_desc = stage_outline.description.clone();
+        let task_title = task.title.clone();
+        let task_type = task.task_type.clone();
+        let order = task.order;
+
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await.map_err(|e| format!("信号量: {}", e))?;
+            let prompt = build_task_content_prompt(&stage_title, &stage_title, &stage_desc, &task_title, &task_type);
+            let raw = call_ai(
+                &client, &provider_type, &base_url, &model, &api_key,
+                "你是学习内容专家。严格按 JSON 格式返回。",
+                &prompt, 6000,
+            ).await.map_err(|e| format!("L3 失败: {}", e))?;
+
+            crate::services::roadmap_parser::parse_task_content_response(&raw, order, &task_title, &task_type)
+        }));
+    }
+
+    for h in handles {
+        if let Ok(Ok(tc)) = h.await {
+            task_contents.push(tc);
+        }
+    }
+    info!("  [重试 L3] ✔ {} 个任务内容", task_contents.len());
+
+    // Update DB: delete old tasks + resources, insert new ones
+    let db = state.db.lock().await;
+
+    // Delete old tasks and resources for this stage
+    db.delete_tasks_by_stage(&stage_id).await?;
+
+    // Mark stage as not fallback
+    db.clear_stage_metadata(&stage_id).await?;
+
+    // Insert new tasks + resources
+    let mut new_tasks = Vec::new();
+    for tc in &task_contents {
+        let task_id = Uuid::new_v4().to_string();
+        let task = Task {
+            id: task_id.clone(),
+            stage_id: stage_id.clone(),
+            title: tc.title.clone(),
+            content: tc.content.clone(),
+            task_type: tc.task_type.clone(),
+            code_example: tc.code_example.clone(),
+            exercise: tc.exercise.clone(),
+            is_completed: false,
+            completed_at: None,
+        };
+        db.create_task(&task).await?;
+
+        for r in &tc.resources {
+            let resource = Resource {
+                id: Uuid::new_v4().to_string(),
+                task_id: task_id.clone(),
+                title: r.title.clone(),
+                url: r.url.clone(),
+                snippet: r.snippet.clone(),
+                resource_type: r.resource_type.clone(),
+            };
+            db.create_resource(&resource).await?;
+        }
+
+        for f in &tc.flashcards {
+            let flashcard = Flashcard::new(stage.roadmap_id.clone(), f.question.clone(), f.answer.clone());
+            db.create_flashcard(&flashcard).await?;
+        }
+
+        new_tasks.push(task_id);
+    }
+
+    info!("  [重试] ✔ 阶段重新生成完成：{} 个任务", new_tasks.len());
+
+    // Build response
+    let tasks: Vec<Task> = db.get_tasks_by_stage(&stage_id).await?;
+    let mut task_responses = Vec::new();
+    for task in &tasks {
+        let resources = db.get_resources_by_task(&task.id).await?;
+        task_responses.push(crate::models::TaskResponse {
+            id: task.id.clone(),
+            title: task.title.clone(),
+            content: task.content.clone(),
+            task_type: task.task_type.clone(),
+            code_example: task.code_example.clone(),
+            exercise: task.exercise.clone(),
+            resources: resources.into_iter().map(|r| crate::models::ResourceResponse {
+                id: r.id, title: r.title, url: r.url, snippet: r.snippet, resource_type: r.resource_type,
+            }).collect(),
+        });
+    }
+
+    Ok(crate::models::StageResponse {
+        id: stage_id,
+        order: stage.order,
+        name: stage.name,
+        objective: stage.objective,
+        estimated_hours: stage.estimated_hours,
+        stage_type: stage.stage_type,
+        is_locked: stage.is_locked,
+        is_fallback: false,
+        pass_threshold: stage.pass_threshold,
+        tasks: task_responses,
+        quiz: None,
+    })
 }

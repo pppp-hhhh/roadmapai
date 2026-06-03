@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Key, Settings as SettingsIcon, Check, X, Loader2, Save, ChevronDown, Sun, Moon, Search } from 'lucide-react';
+import { Key, Settings as SettingsIcon, Check, X, Loader2, Save, ChevronDown, Sun, Moon, Search, Zap } from 'lucide-react';
 import { useSettingsStore } from '../stores/useSettingsStore';
 
 export default function SettingsPage() {
@@ -210,6 +210,52 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Quick presets */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  快速预设
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfig({
+                      ...config,
+                      providerType: 'openai',
+                      baseUrl: 'https://api.deepseek.com/v1',
+                      model: 'deepseek-v4-flash',
+                    })}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl text-blue-700 dark:text-blue-300 text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                  >
+                    <Zap size={16} />DeepSeek V4 Flash
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfig({
+                      ...config,
+                      providerType: 'openai',
+                      baseUrl: 'https://api.openai.com/v1',
+                      model: 'gpt-4o',
+                    })}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-700 dark:text-emerald-300 text-sm hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
+                  >
+                    <Zap size={16} />GPT-4o
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfig({
+                      ...config,
+                      providerType: 'anthropic',
+                      baseUrl: '',
+                      model: 'claude-sonnet-4-20250514',
+                    })}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl text-purple-700 dark:text-purple-300 text-sm hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+                  >
+                    <Zap size={16} />Claude
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">一键填入推荐配置 · 只需补充 API Key</p>
               </div>
 
               {/* API Key */}

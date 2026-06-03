@@ -442,6 +442,29 @@ impl Database {
         Ok(())
     }
 
+    pub async fn delete_tasks_by_stage(&self, stage_id: &str) -> Result<(), String> {
+        sqlx::query("DELETE FROM resources WHERE task_id IN (SELECT id FROM tasks WHERE stage_id = ?)")
+            .bind(stage_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除资源: {}", e))?;
+        sqlx::query("DELETE FROM tasks WHERE stage_id = ?")
+            .bind(stage_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除任务: {}", e))?;
+        Ok(())
+    }
+
+    pub async fn clear_stage_metadata(&self, stage_id: &str) -> Result<(), String> {
+        sqlx::query("UPDATE stages SET metadata = NULL WHERE id = ?")
+            .bind(stage_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法更新阶段: {}", e))?;
+        Ok(())
+    }
+
     pub async fn get_resources_by_task(&self, task_id: &str) -> Result<Vec<Resource>, String> {
         let resources = sqlx::query_as::<_, Resource>(
             "SELECT id, task_id, title, url, snippet, resource_type FROM resources WHERE task_id = ?",

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusCircle, BookOpen, Clock, TrendingUp, Trash2 } from 'lucide-react';
+import { PlusCircle, BookOpen, Clock, TrendingUp, Trash2, Search } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 import type { Stage } from '../types';
@@ -16,8 +16,13 @@ interface RoadmapWithStages {
 export default function HomePage() {
   const navigate = useNavigate();
   const { roadmaps, isLoading, fetchRoadmaps, deleteRoadmap } = useRoadmapStore();
-  const [taskCounts, setTaskCounts] = useState<Record<string, { total: number; completed: number }>>({});
+  const [taskCounts, setTaskCounts] = useState<Record<string, { total: number; completed: number; nextStage?: string }>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredRoadmaps = roadmaps.filter(r =>
+    !searchQuery || r.title.includes(searchQuery) || r.description.includes(searchQuery)
+  );
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -36,7 +41,7 @@ export default function HomePage() {
   useEffect(() => {
     // Fetch task counts for each roadmap
     const fetchCounts = async () => {
-      const counts: Record<string, { total: number; completed: number }> = {};
+      const counts: Record<string, { total: number; completed: number; nextStage?: string }> = {};
       for (const roadmap of roadmaps) {
         try {
           const roadmapData = await invoke<RoadmapWithStages>('get_roadmap', { id: roadmap.id });
@@ -48,9 +53,10 @@ export default function HomePage() {
               if (task.is_completed) completed++;
             });
           });
-          counts[roadmap.id] = { total, completed };
+          const nextStage = roadmapData?.stages?.find(s => !s.isLocked)?.name;
+          counts[roadmap.id] = { total, completed, nextStage };
         } catch {
-          counts[roadmap.id] = { total: 0, completed: 0 };
+          counts[roadmap.id] = { total: 0, completed: 0, nextStage: undefined };
         }
       }
       setTaskCounts(counts);
@@ -109,18 +115,25 @@ export default function HomePage() {
             </button>
           </div>
         ) : (
-          /* Roadmap grid */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {roadmaps.map(roadmap => {
-              const counts = taskCounts[roadmap.id] || { total: 0, completed: 0 };
+          <>
+            {/* Search bar */}
+            {roadmaps.length > 3 && (
+              <div className="mb-6 relative">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="搜索路线..."
+                  className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 outline-none" />
+              </div>
+            )}
+
+            {/* Roadmap grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredRoadmaps.map(roadmap => {
+              const counts = taskCounts[roadmap.id] || { total: 0, completed: 0, nextStage: undefined };
               const progress = counts.total > 0 ? (counts.completed / counts.total) * 100 : 0;
 
               return (
-                <div
-                  key={roadmap.id}
-                  onClick={() => navigate(`/roadmap/${roadmap.id}`)}
-                  className="block group cursor-pointer"
-                >
+                <div key={roadmap.id} onClick={() => navigate(`/roadmap/${roadmap.id}`)} className="block group cursor-pointer">
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-all hover:shadow-md hover:border-primary-300 dark:hover:border-primary-700">
                     <div className="flex items-start justify-between mb-4">
                       <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900 rounded-xl flex items-center justify-center">
@@ -130,46 +143,41 @@ export default function HomePage() {
                         <Clock size={14} />
                         <span>{roadmap.estimated_total_hours} 小时</span>
                       </div>
-                      <button
-                        onClick={(e) => handleDelete(e, roadmap.id)}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          deletingId === roadmap.id
-                            ? 'bg-red-100 dark:bg-red-900/30 text-red-600'
-                            : 'text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
-                        }`}
-                        title={deletingId === roadmap.id ? '再次点击确认删除' : '删除路线'}
-                      >
+                      <button onClick={(e) => handleDelete(e, roadmap.id)}
+                        className={`p-1.5 rounded-lg transition-colors ${deletingId === roadmap.id
+                          ? 'bg-red-100 dark:bg-red-900/30 text-red-600'
+                          : 'text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
+                        title={deletingId === roadmap.id ? '再次点击确认删除' : '删除路线'}>
                         <Trash2 size={16} />
                       </button>
                     </div>
-
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                       {roadmap.title}
                     </h3>
                     <p className="text-gray-500 dark:text-gray-400 text-sm mb-4 line-clamp-2">
                       {roadmap.description}
                     </p>
-
-                    {/* Progress bar */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500 dark:text-gray-400">进度</span>
-                        <span className="font-medium text-gray-900 dark:text-white">
-                          {counts.completed}/{counts.total} 任务
-                        </span>
+                        <span className="font-medium text-gray-900 dark:text-white">{counts.completed}/{counts.total} 任务</span>
                       </div>
                       <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary-500 rounded-full transition-all duration-500"
-                          style={{ width: `${progress}%` }}
-                        />
+                        <div className="h-full bg-primary-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
                       </div>
                     </div>
+                    {counts.nextStage && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center gap-2 text-xs">
+                        <span className="text-gray-400">下一步</span>
+                        <span className="text-primary-600 dark:text-primary-400 font-medium">{counts.nextStage}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
+        </>
         )}
       </div>
     </div>

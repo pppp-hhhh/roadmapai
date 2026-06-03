@@ -21,6 +21,7 @@ interface RoadmapState {
   addResource: (taskId: string, title: string, url: string, snippet: string, resourceType: string) => Promise<Resource>;
   updateResource: (id: string, title: string, url: string, snippet: string, resourceType: string) => Promise<void>;
   deleteResource: (id: string) => Promise<void>;
+  retryStage: (stageId: string) => Promise<void>;
 }
 
 export const useRoadmapStore = create<RoadmapState>((set, get) => ({
@@ -138,5 +139,21 @@ export const useRoadmapStore = create<RoadmapState>((set, get) => ({
 
   deleteResource: async (id: string) => {
     await invoke('delete_resource', { id });
+  },
+
+  retryStage: async (stageId: string) => {
+    set({ isLoading: true });
+    try {
+      const updatedStage = await invoke<any>('retry_stage', { stageId });
+      if (get().currentRoadmap) {
+        const current = get().currentRoadmap!;
+        const updatedStages = current.stages.map(s =>
+          s.id === stageId ? { ...s, ...updatedStage, tasks: updatedStage.tasks } : s
+        );
+        set({ currentRoadmap: { ...current, stages: updatedStages }, isLoading: false });
+      }
+    } catch (error) {
+      set({ error: String(error), isLoading: false });
+    }
   },
 }));

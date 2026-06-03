@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle2, Circle, ExternalLink, BookOpen,
@@ -7,10 +7,12 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import remarkGfm from 'remark-gfm';
+import { lowlight } from '../utils/markdown';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 import QuizModal from '../components/QuizModal';
 import { openExternalLink } from '../utils/links';
-import type { Task, Stage, Resource } from '../types';
+import type { Stage, Resource } from '../types';
 
 const taskTypeIcons: Record<string, typeof BookOpen> = {
   reading: BookOpen, video: Video, exercise: Code, project: FileText, quiz: HelpCircle,
@@ -26,11 +28,9 @@ const taskTypeColors: Record<string, string> = {
 export default function RoadmapDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentRoadmap, isLoading, fetchRoadmap, markTaskCompleted, submitQuiz, addResource, updateResource, deleteResource } = useRoadmapStore();
+  const { currentRoadmap, isLoading, fetchRoadmap, markTaskCompleted, submitQuiz, addResource, updateResource, deleteResource, retryStage } = useRoadmapStore();
   const [selectedStage, setSelectedStage] = useState<Stage | null>(null);
   const [showStageModal, setShowStageModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [showTaskModal, setShowTaskModal] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [quizStage, setQuizStage] = useState<Stage | null>(null);
   const [showQuizModal, setShowQuizModal] = useState(false);
@@ -216,23 +216,31 @@ export default function RoadmapDetailPage() {
                 <button onClick={() => handleStageClick(stage)} disabled={stage.isLocked}
                   className={`absolute left-0 w-12 h-12 rounded-full flex items-center justify-center transition-all z-10 ${
                     stage.isLocked ? 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed' :
+                    stage.isFallback ? 'bg-red-100 dark:bg-red-900/50 cursor-pointer hover:bg-red-200 dark:hover:bg-red-900/70 hover:scale-110' :
                     stage.stageType === 'quiz' ? 'bg-yellow-100 dark:bg-yellow-900/50 cursor-pointer hover:bg-yellow-200 hover:scale-110' :
                     'bg-primary-100 dark:bg-primary-900/50 cursor-pointer hover:bg-primary-200 hover:scale-110'
                   }`}>
                   {stage.isLocked ? <Lock size={20} className="text-gray-400" /> :
+                   stage.isFallback ? <AlertTriangle size={20} className="text-red-500" /> :
                    stage.stageType === 'quiz' ? <HelpCircle size={20} className="text-yellow-500" /> :
                    <span className="text-primary-600 dark:text-primary-300 font-bold">{index + 1}</span>}
                 </button>
                 <button onClick={() => handleStageClick(stage)} disabled={stage.isLocked}
-                  className={`w-full text-left bg-gray-50 dark:bg-gray-800/60 rounded-xl border p-4 transition-all duration-200 cursor-pointer ${
-                    stage.isLocked ? 'border-gray-200 dark:border-gray-700 opacity-50 cursor-not-allowed' :
-                    'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60 hover:border-primary-400 hover:shadow-lg'
+                  className={`w-full text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer ${
+                    stage.isLocked ? 'bg-gray-50 dark:bg-gray-800/30 border-gray-200 dark:border-gray-700 opacity-50 cursor-not-allowed' :
+                    stage.isFallback ? 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950/50 hover:border-red-400 hover:shadow-lg' :
+                    'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60 hover:border-primary-400 hover:shadow-lg'
                   }`}>
                   <div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-gray-500 dark:text-gray-400">第{stage.order}关</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${stage.stageType === 'quiz' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600' : stage.stageType === 'project' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'}`}>
-                      {stage.stageType === 'learning' ? '学习' : stage.stageType === 'quiz' ? '测验' : '项目'}</span>
-                    {stage.isFallback && <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 flex items-center gap-1"><AlertTriangle size={10} />AI生成失败</span>}
+                    {stage.isFallback ? (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-red-500 text-white font-medium flex items-center gap-1">
+                        <AlertTriangle size={12} />AI 未生成 — 点击查看详情
+                      </span>
+                    ) : (
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${stage.stageType === 'quiz' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600' : stage.stageType === 'project' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'}`}>
+                        {stage.stageType === 'learning' ? '学习' : stage.stageType === 'quiz' ? '测验' : '项目'}</span>
+                    )}
                   </div><span className="text-sm text-gray-400">{stage.estimated_hours} 小时</span></div>
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{stage.name}</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">{stage.objective}</p>
@@ -265,10 +273,23 @@ export default function RoadmapDetailPage() {
             </div>
             <div className="p-6 space-y-6">
               {selectedStage.isFallback && (
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 flex items-start gap-3">
-                  <AlertTriangle size={20} className="text-yellow-600 shrink-0 mt-0.5" />
-                  <div><div className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-1">AI 暂时无法生成此阶段的详细内容</div>
-                  <div className="text-xs text-yellow-700 dark:text-yellow-400">已使用占位内容。建议在首页重新生成整条路线，或参考下方学习建议自行补充内容。</div></div>
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle size={20} className="text-yellow-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-1">AI 暂时无法生成此阶段的详细内容</div>
+                      <div className="text-xs text-yellow-700 dark:text-yellow-400">已使用占位内容。你可以重新生成此阶段，或参考下方学习建议自行补充。</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await retryStage(selectedStage.id);
+                      if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
+                    }}
+                    className="w-full py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Play size={14} />重新生成此阶段
+                  </button>
                 </div>
               )}
               <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4">
@@ -298,10 +319,9 @@ export default function RoadmapDetailPage() {
                           </div>
                           {isExpanded && (
                             <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-4 space-y-4">
-                              <div className="markdown-content text-sm"><ReactMarkdown rehypePlugins={[rehypeHighlight]}>{task.content}</ReactMarkdown></div>
-                              <button onClick={() => { setSelectedTask(task); setShowTaskModal(true); }} className="text-xs text-primary-500 hover:text-primary-600">在新窗口查看完整内容 →</button>
+                              <div className="markdown-content text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>{task.content}</ReactMarkdown></div>
                               {task.code_example && <pre className="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto text-sm"><code>{task.code_example}</code></pre>}
-                              {task.exercise && <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl p-4"><div className="text-sm font-medium text-primary-700 dark:text-primary-300 mb-1">练习</div><p className="text-sm text-primary-900 dark:text-primary-100">{task.exercise}</p></div>}
+                              {task.exercise && <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl p-4"><div className="text-sm font-medium text-primary-700 dark:text-primary-300 mb-1">练习</div><div className="markdown-content text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>{task.exercise}</ReactMarkdown></div></div>}
                               <div>
                                 <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">学习资源（可编辑）</div>
                                 <div className="flex gap-3 overflow-x-auto pb-2">
@@ -320,24 +340,6 @@ export default function RoadmapDetailPage() {
               {canTakeQuiz(selectedStage) && (
                 <button onClick={() => handleStartQuiz(selectedStage)} className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"><Play size={16} />参加过关测验</button>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showTaskModal && selectedTask && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center pt-12 px-4">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowTaskModal(false)} />
-          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-auto z-10">
-            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between rounded-t-2xl">
-              <div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-xl flex items-center justify-center ${taskTypeColors[selectedTask.task_type]}`}>{React.createElement(taskTypeIcons[selectedTask.task_type] || BookOpen, { size: 20 })}</div><div><h2 className="font-semibold text-gray-900 dark:text-white">{selectedTask.title}</h2><p className="text-sm text-gray-500">{selectedTask.task_type === 'reading' ? '阅读' : selectedTask.task_type === 'video' ? '视频' : selectedTask.task_type === 'exercise' ? '练习' : selectedTask.task_type === 'project' ? '项目' : '测验'}</p></div></div>
-              <button onClick={() => setShowTaskModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><X size={20} className="text-gray-500" /></button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="markdown-content"><ReactMarkdown rehypePlugins={[rehypeHighlight]}>{selectedTask.content}</ReactMarkdown></div>
-              {selectedTask.code_example && <div><h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">代码示例</h3><pre className="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto text-sm"><code>{selectedTask.code_example}</code></pre></div>}
-              {selectedTask.exercise && <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl p-4"><h3 className="text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">练习</h3><p className="text-primary-900 dark:text-primary-100">{selectedTask.exercise}</p></div>}
-              {selectedTask.resources.length > 0 && <div><h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">学习资源</h3><div className="flex gap-4 overflow-x-auto pb-2">{selectedTask.resources.map(r => renderResourceCard(r))}{renderAddResourceButton(selectedTask.id)}</div></div>}
             </div>
           </div>
         </div>

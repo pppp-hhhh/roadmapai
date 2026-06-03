@@ -36,14 +36,6 @@ pub struct TaskContent {
     pub flashcards: Vec<FlashcardItem>,
 }
 
-/// Layer 4 输出：任务的资源 + 抽认卡
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskAugment {
-    pub order: usize,
-    pub resources: Vec<ResourceDetail>,
-    pub flashcards: Vec<FlashcardItem>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StageDetail {
     pub order: usize,

@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Brain, RotateCcw, ChevronRight, PartyPopper, Plus, X, ExternalLink, BookOpen, GraduationCap } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { useFlashcardStore } from '../stores/useFlashcardStore';
 import { openExternalLink } from '../utils/links';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 
 const qualityLabels = [
-  { value: 0, label: '重来', color: 'bg-red-500 hover:bg-red-600', emoji: '😢' },
-  { value: 1, label: '吃力', color: 'bg-orange-500 hover:bg-orange-600', emoji: '😓' },
-  { value: 2, label: '较难', color: 'bg-yellow-500 hover:bg-yellow-600', emoji: '😐' },
-  { value: 3, label: '良好', color: 'bg-lime-500 hover:bg-lime-600', emoji: '🙂' },
-  { value: 4, label: '简单', color: 'bg-green-500 hover:bg-green-600', emoji: '😊' },
-  { value: 5, label: '完美', color: 'bg-emerald-500 hover:bg-emerald-600', emoji: '🤩' },
+  { value: 0, label: '重来', color: 'bg-red-500 hover:bg-red-600', emoji: '😢', tip: '完全忘记，需要重新学习' },
+  { value: 1, label: '吃力', color: 'bg-orange-500 hover:bg-orange-600', emoji: '😓', tip: '答案不对，但有点印象' },
+  { value: 2, label: '较难', color: 'bg-yellow-500 hover:bg-yellow-600', emoji: '😐', tip: '答错了，但看答案后能理解' },
+  { value: 3, label: '良好', color: 'bg-lime-500 hover:bg-lime-600', emoji: '🙂', tip: '答对了，但有些犹豫和困难' },
+  { value: 4, label: '简单', color: 'bg-green-500 hover:bg-green-600', emoji: '😊', tip: '答对了，稍微思考了一下' },
+  { value: 5, label: '完美', color: 'bg-emerald-500 hover:bg-emerald-600', emoji: '🤩', tip: '完美回答，完全不需要思考' },
 ];
 
 export default function FlashcardsPage() {
@@ -236,8 +237,8 @@ export default function FlashcardsPage() {
               {isFlipped && (
                 <div className="w-full border-t border-gray-100 dark:border-gray-700 pt-6 mt-4">
                   <div className="text-sm text-primary-600 dark:text-primary-400 mb-2 text-center">答案</div>
-                  <div className="text-lg text-gray-900 dark:text-white text-center whitespace-pre-wrap">
-                    {card.answer}
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-left text-gray-900 dark:text-white">
+                    <ReactMarkdown>{card.answer}</ReactMarkdown>
                   </div>
                 </div>
               )}
@@ -303,14 +304,28 @@ export default function FlashcardsPage() {
         </div>
         {isFlipped && (
           <div className="flex-shrink-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-6">
-            <div className="flex justify-center gap-3">
-              {qualityLabels.map(({ value, label, color, emoji }) => (
-                <button key={value} onClick={() => handleReview(value)}
-                  className={`${color} text-white px-4 py-3 rounded-xl hover:scale-105 active:scale-95 flex flex-col items-center min-w-20`}>
-                  <span className="text-xl mb-1">{emoji}</span>
-                  <span className="text-xs font-medium">{label}</span>
-                </button>
-              ))}
+            <div className="text-center text-xs text-gray-400 mb-3">你的回忆程度如何？← 越往右越熟练</div>
+            <div className="flex justify-center gap-2">
+              {/* Incorrect group */}
+              <div className="flex gap-2 border-r border-gray-200 dark:border-gray-700 pr-3 mr-1">
+                {qualityLabels.slice(0, 3).map(({ value, label, color, emoji, tip }) => (
+                  <button key={value} onClick={() => handleReview(value)} title={tip}
+                    className={`${color} text-white px-3 py-2.5 rounded-xl hover:scale-105 active:scale-95 flex flex-col items-center w-16 opacity-80 hover:opacity-100`}>
+                    <span className="text-lg mb-0.5">{emoji}</span>
+                    <span className="text-[10px] font-medium">{label}</span>
+                  </button>
+                ))}
+              </div>
+              {/* Correct group */}
+              <div className="flex gap-2">
+                {qualityLabels.slice(3, 6).map(({ value, label, color, emoji, tip }) => (
+                  <button key={value} onClick={() => handleReview(value)} title={tip}
+                    className={`${color} text-white px-4 py-3 rounded-xl hover:scale-105 active:scale-95 flex flex-col items-center w-20 shadow-lg`}>
+                    <span className="text-xl mb-0.5">{emoji}</span>
+                    <span className="text-[11px] font-semibold">{label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -354,21 +369,21 @@ export default function FlashcardsPage() {
 
         {/* Stats cards */}
         <div className="grid grid-cols-2 gap-4 mb-8">
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-6">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-6" title="新卡片：尚未学习的内容，需要先阅读理解">
             <div className="flex items-center gap-2 mb-2">
               <GraduationCap size={20} className="text-blue-500" />
               <span className="text-sm text-gray-500 dark:text-gray-400">待学习</span>
             </div>
             <div className="text-4xl font-bold text-gray-900 dark:text-white mb-1">{newCards.length}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">张新卡片</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">张新卡片 · 需先学习</div>
           </div>
-          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-6">
+          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-6" title="待复习：已学习过的卡片，按 SM-2 算法到期提醒你巩固">
             <div className="flex items-center gap-2 mb-2">
               <RotateCcw size={20} className="text-orange-500" />
               <span className="text-sm text-gray-500 dark:text-gray-400">待复习</span>
             </div>
             <div className="text-4xl font-bold text-gray-900 dark:text-white mb-1">{dueCards.length}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">张到期卡片</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">张到期卡片 · 间隔重复</div>
           </div>
         </div>
 
@@ -381,7 +396,7 @@ export default function FlashcardsPage() {
                 <GraduationCap size={24} />
                 <div className="text-left">
                   <div className="font-semibold">学习新卡片</div>
-                  <div className="text-xs opacity-90">先读懂并记忆 {newCards.length} 张新内容</div>
+                  <div className="text-xs opacity-90">逐张浏览并理解新内容 · 点「已学会」进入复习队列</div>
                 </div>
               </div>
               <ChevronRight size={20} />
@@ -395,7 +410,7 @@ export default function FlashcardsPage() {
                 <RotateCcw size={24} />
                 <div className="text-left">
                   <div className="font-semibold">开始复习</div>
-                  <div className="text-xs opacity-90">用 SM-2 算法巩固 {dueCards.length} 张已学内容</div>
+                  <div className="text-xs opacity-90">SM-2 间隔重复 · 评分越高中记忆越牢固 · {dueCards.length} 张到期</div>
                 </div>
               </div>
               <ChevronRight size={20} />

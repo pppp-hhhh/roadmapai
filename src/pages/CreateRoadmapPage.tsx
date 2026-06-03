@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sparkles, Loader2, Brain, ListChecks, FileText } from 'lucide-react';
+import { ArrowLeft, Sparkles, Loader2 } from 'lucide-react';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 
 const levels = ['入门', '进阶', '高级'];
@@ -19,38 +19,20 @@ export default function CreateRoadmapPage() {
     e.preventDefault();
     setValidationError('');
     if (!form.topic.trim()) { setValidationError('请输入学习主题'); return; }
-    if (!form.goal.trim()) { setValidationError('请描述你的学习目标'); return; }
     try {
       const roadmapId = await generateRoadmap({
-        topic: form.topic, level: form.level, goal: form.goal, difficulty: form.difficulty,
+        topic: form.topic, level: form.level, goal: form.goal.trim() || `系统学习${form.topic}`,
+        difficulty: form.difficulty,
       });
       navigate(`/roadmap/${roadmapId}`);
     } catch (err) { /* store handles error */ }
   };
 
   const isOutlinePhase = !progress || progress.type === 'started' || progress.type === 'outline_complete';
-  const isSkeletonPhase = progress?.type === 'stage_started' || progress?.type === 'stage_completed' || progress?.type === 'stage_failed';
 
   const progressPercent = progress && progress.total > 0
     ? Math.round((progress.current / progress.total) * 100)
     : 0;
-
-  // Determine active layer label
-  const layerLabel = !progress || progress.type === 'started'
-    ? '生成大纲'
-    : progress.type === 'outline_complete'
-    ? '大纲完成，生成阶段架构'
-    : isSkeletonPhase
-    ? `生成阶段内容 (${progress.current}/${progress.total})`
-    : progress.type === 'completed'
-    ? '写入数据库'
-    : '处理中...';
-
-  const LayerIcon = !progress || progress.type === 'started' || progress.type === 'outline_complete'
-    ? Brain
-    : isSkeletonPhase
-    ? ListChecks
-    : FileText;
 
   return (
     <div className="h-full overflow-auto">
@@ -68,6 +50,7 @@ export default function CreateRoadmapPage() {
             <input type="text" value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })}
               placeholder="例如：机器学习、Python 编程、Web 开发"
               className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400" />
+            <p className="text-xs text-gray-400 mt-1">AI 将严格围绕此主题生成所有学习内容 · 学习时间和周期由 AI 自动评估</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">你当前的水平</label>
@@ -81,9 +64,12 @@ export default function CreateRoadmapPage() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">你的学习目标是什么？</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              学习目标 <span className="text-gray-400 font-normal">（可选）</span>
+            </label>
             <textarea value={form.goal} onChange={e => setForm({ ...form, goal: e.target.value })}
-              placeholder="例如：我想从零搭建自己的神经网络..." rows={3}
+              placeholder="如：期末复习、系统掌握、快速入门... 不填则 AI 自动判断"
+              rows={2}
               className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none text-gray-900 dark:text-white resize-none" />
           </div>
           <div>
@@ -111,54 +97,130 @@ export default function CreateRoadmapPage() {
 
         {/* Progress overlay */}
         {isGenerating && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full p-8 shadow-2xl">
-              {/* Icon + title */}
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-white/20 dark:border-gray-700/50">
+
+              {/* Steps indicator */}
+              <div className="flex items-center justify-center gap-1 mb-8">
+                {[
+                  { id: 1, label: '大纲', icon: '🧠' },
+                  { id: 2, label: '骨架', icon: '📋' },
+                  { id: 3, label: '内容', icon: '📝' },
+                  { id: 4, label: '完成', icon: '✅' },
+                ].map(step => {
+                  const isActive = (step.id === 1 && (!progress || progress.type === 'started' || progress.type === 'outline_complete'))
+                    || (step.id === 2 && (progress?.type === 'stage_started' || progress?.type === 'stage_completed'))
+                    || (step.id === 3 && (progress?.type === 'stage_completed' && progress.current > 0))
+                    || (step.id === 4 && progress?.type === 'completed');
+                  const isDone = step.id < (progress?.type === 'completed' ? 5 : progress?.type === 'stage_completed' ? 3 : progress?.type === 'outline_complete' ? 2 : 1);
+                  return (
+                    <div key={step.id} className="flex items-center gap-1">
+                      <div className={`flex flex-col items-center gap-1 transition-all duration-700 ${
+                        isActive ? 'scale-110' : isDone ? 'opacity-50 scale-95' : 'opacity-25 scale-90'
+                      }`}>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-sm transition-all duration-500 ${
+                          isActive ? 'bg-primary-500 text-white shadow-primary-500/30 ring-4 ring-primary-100 dark:ring-primary-900/50' :
+                          isDone ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-700'
+                        }`}>
+                          {isDone ? '✓' : step.icon}
+                        </div>
+                        <span className={`text-[10px] font-medium transition-colors duration-500 ${
+                          isActive ? 'text-primary-600 dark:text-primary-400' :
+                          isDone ? 'text-green-500' : 'text-gray-400'
+                        }`}>{step.label}</span>
+                      </div>
+                      {step.id < 4 && (
+                        <div className={`w-6 h-0.5 rounded-full mb-4 transition-all duration-700 ${
+                          isDone ? 'bg-green-400' : isActive && step.id < 4 ? 'bg-primary-300 animate-pulse' : 'bg-gray-200 dark:bg-gray-700'
+                        }`} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Main status */}
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/50 rounded-full flex items-center justify-center mx-auto mb-4 relative">
-                  <div className="absolute inset-0 rounded-full border-4 border-primary-200 dark:border-primary-800 border-t-primary-500 animate-spin" />
-                  <LayerIcon size={28} className="text-primary-600 dark:text-primary-400 relative z-10" />
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 text-xs font-medium mb-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse" />
+                  {!progress || progress.type === 'started' ? 'Layer 1: 大纲生成' :
+                   progress.type === 'outline_complete' ? 'Layer 2: 阶段架构' :
+                   progress.type === 'stage_started' || progress.type === 'stage_completed' ? 'Layer 3: 任务内容' :
+                   progress.type === 'completed' ? '写入数据库' : '处理中'}
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                  {!progress || progress.type === 'started' ? '正在生成学习路线大纲' :
-                   progress.type === 'outline_complete' ? '大纲生成完成' :
-                   progress.type === 'stage_started' || progress.type === 'stage_completed' ? '正在并行生成各阶段内容' :
-                   progress.type === 'completed' ? '正在保存到数据库...' :
-                   '正在处理...'}
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                  {!progress || progress.type === 'started' ? 'AI 正在规划学习路径' :
+                   progress.type === 'outline_complete' ? '大纲生成完毕，正在细化' :
+                   progress.type === 'stage_started' || progress.type === 'stage_completed' ? '正在并行生成任务内容' :
+                   progress.type === 'completed' ? '正在保存...' : '处理中'}
                 </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{layerLabel}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {!progress || progress.type === 'started' ? '分析主题、评估难度、设计阶段划分...' :
+                   progress.type === 'outline_complete' ? `已规划 ${progress.total} 个阶段，正在为每个阶段生成任务列表...` :
+                   progress.type === 'stage_started' || progress.type === 'stage_completed'
+                    ? progress.stage_title
+                      ? `当前阶段：${progress.stage_title}`
+                      : 'AI 正在为每个任务编写详细内容、推荐资源和生成记忆卡片...'
+                   : '写入数据库，准备展示...'}
+                </p>
               </div>
 
               {/* Progress bar */}
               {!isOutlinePhase && progress && progress.total > 0 && (
                 <div className="space-y-3">
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-primary-400 to-primary-600 rounded-full transition-all duration-700 ease-out"
-                      style={{ width: `${progressPercent}%` }} />
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                    <span>{progress.current}/{progress.total} 阶段</span>
-                    <span>{progressPercent}%</span>
-                  </div>
-                  {progress.stage_title && (
-                    <div className="text-xs text-gray-600 dark:text-gray-300 text-center animate-pulse">
-                      {progress.stage_title}
+                  <div className="relative">
+                    <div className="w-full bg-gray-100 dark:bg-gray-700/50 rounded-full h-4 overflow-hidden shadow-inner">
+                      <div className="h-full rounded-full transition-all duration-1000 ease-out relative overflow-hidden"
+                        style={{ width: `${Math.max(progressPercent, 4)}%` }}>
+                        {/* Animated gradient */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-400 via-primary-500 to-purple-500 animate-flow"
+                          style={{
+                            backgroundSize: '200% 100%',
+                            animation: 'flow 2s linear infinite',
+                          }} />
+                        {/* Shine effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"
+                          style={{
+                            backgroundSize: '50% 100%',
+                            animation: 'shimmer 1.5s ease-in-out infinite',
+                          }} />
+                      </div>
                     </div>
-                  )}
+                    {/* Percentage badge */}
+                    <div className="absolute -top-3 right-0 bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg transition-all duration-500"
+                      style={{ transform: `translateX(-${100 - progressPercent}%)` }}>
+                      {progressPercent}%
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span className="flex items-center gap-1">
+                      <span className="w-1 h-1 rounded-full bg-primary-400" />
+                      {progress.current}/{progress.total} 阶段
+                    </span>
+                  </div>
                 </div>
               )}
 
-              {/* Layer indicator dots */}
-              <div className="flex justify-center gap-2 mt-4">
-                <div className={`w-2.5 h-2.5 rounded-full transition-all duration-500 ${
-                  (!progress || progress.type === 'started' || progress.type === 'outline_complete')
-                    ? 'bg-primary-500 scale-125' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                <div className={`w-2.5 h-2.5 rounded-full transition-all duration-500 ${
-                  (progress?.type === 'stage_started' || progress?.type === 'stage_completed')
-                    ? 'bg-primary-500 scale-125 animate-pulse' : 'bg-gray-300 dark:bg-gray-600'}`} />
-                <div className={`w-2.5 h-2.5 rounded-full transition-all duration-500 ${
-                  progress?.type === 'completed'
-                    ? 'bg-green-500 scale-125' : 'bg-gray-300 dark:bg-gray-600'}`} />
+              {/* Fallback dots for outline phase */}
+              {isOutlinePhase && (
+                <div className="flex justify-center gap-2 mt-2">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="w-2 h-2 rounded-full bg-primary-400 animate-bounce"
+                      style={{ animationDelay: `${i * 0.2}s`, animationDuration: '1s' }} />
+                  ))}
+                </div>
+              )}
+
+              {/* Cancel button */}
+              <div className="mt-6 text-center">
+                <button
+                  onClick={() => {
+                    navigate('/');
+                  }}
+                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  取消生成 · 返回首页后可稍后查看已生成部分
+                </button>
               </div>
             </div>
           </div>
