@@ -22,6 +22,7 @@ interface RoadmapState {
   updateResource: (id: string, title: string, url: string, snippet: string, resourceType: string) => Promise<void>;
   deleteResource: (id: string) => Promise<void>;
   retryStage: (stageId: string) => Promise<void>;
+  reset: () => void;
 }
 
 export const useRoadmapStore = create<RoadmapState>((set, get) => ({
@@ -156,4 +157,6 @@ export const useRoadmapStore = create<RoadmapState>((set, get) => ({
       set({ error: String(error), isLoading: false });
     }
   },
+
+  reset: () => set({ isGenerating: false, error: null, progress: null }),
 }));

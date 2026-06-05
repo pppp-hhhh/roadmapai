@@ -63,6 +63,7 @@ pub fn run() {
             commands::roadmap::update_resource,
             commands::roadmap::delete_resource,
             commands::roadmap::retry_stage,
+            commands::roadmap::add_task_to_stage,
             commands::flashcard::create_flashcard,
             commands::flashcard::get_due_flashcards,
             commands::flashcard::get_new_flashcards,
@@ -75,7 +76,14 @@ pub fn run() {
             commands::settings::get_api_config,
             commands::settings::test_connection,
             commands::settings::set_ai_provider,
+            commands::settings::detect_user_region,
             commands::chat::chat_send,
+            commands::chat::list_chat_sessions,
+            commands::favorites::list_favorites,
+            commands::favorites::add_favorite,
+            commands::favorites::remove_favorite,
+            commands::stats::get_user_stats,
+            commands::ai_loop::refine_task_content,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 应用运行异常");

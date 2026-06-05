@@ -1,4 +1,5 @@
 use crate::services::parallel::StageOutline;
+use regex_lite::Regex;
 use serde::Deserialize;
 use tracing::warn;
 
@@ -11,10 +12,33 @@ struct AiResource {
 }
 
 fn strip_thinking_tags(s: &str) -> String {
+    // 1. 标准 XML 风格 <think>...</think> / <reasoning>...</reasoning>
     let s = remove_tagged_blocks(s, "think");
     let s = remove_tagged_blocks(&s, "thinking");
     let s = remove_tagged_blocks(&s, "reasoning");
+    let s = remove_tagged_blocks(&s, "reflection");
+    // 2. Markdown 风格 ### 思考 ... / **思考** ... / **Reasoning:** ...
+    let s = remove_markdown_thinking_blocks(&s);
     s
+}
+
+fn remove_markdown_thinking_blocks(s: &str) -> String {
+    // 匹配从 "### 思考" / "**Reasoning:**" 之类到下一个 "###" / ```  / 末尾
+    let patterns = [
+        // "### 思考" / "### Thought" / "### Reasoning" 到下一个 ### 或 ```
+        r"(?si)#{1,6}\s*(?:思考|Thought|Reasoning|Reflection|思考过程|Internal Reasoning)\s*[:：]?[^\n]*\n.*?(?=\n#{1,6}\s|\n```|$)",
+        // "**思考:**" / "**Reasoning:**" 块
+        r"(?si)\*\*(?:思考|Thought|Reasoning|Reflection|思考过程)[:：]\*\*[^\n]*\n.*?(?=\n#{1,6}\s|\n```|\n\*\*[^*]|$)",
+        // "Reasoning:" / "Thought:" 一直到 JSON 起始 {
+        r#"(?si)(?:^|\n)(?:Reasoning|Thought|思考|思考过程|Reflection)[:：][^\n]*\n.*?(?=\{\s*"[a-z_]+"\s*:|$)"#,
+    ];
+    let mut result = s.to_string();
+    for p in patterns {
+        if let Ok(re) = Regex::new(p) {
+            result = re.replace_all(&result, "").to_string();
+        }
+    }
+    result
 }
 
 fn remove_tagged_blocks(s: &str, tag: &str) -> String {
@@ -103,8 +127,28 @@ fn remove_trailing_commas(s: &str) -> String {
 }
 
 fn extract_content_by_regex(raw: &str) -> Option<String> {
-    let re = regex_lite::Regex::new(r#""content"\s*:\s*"((?:[^"\\]|\\.)*)""#).ok()?;
-    re.captures(raw).and_then(|caps| caps.get(1)).map(|m| m.as_str().to_string())
+    // 多种匹配模式:任意空白/换行
+    let patterns = [
+        r#""content"\s*:\s*"((?:[^"\\]|\\.)*)""#,
+        r#""content"\s*:\s*"((?:\\.|[^"\\])*)"#,
+    ];
+    for p in patterns {
+        if let Ok(re) = Regex::new(p) {
+            if let Some(caps) = re.captures(raw) {
+                if let Some(m) = caps.get(1) {
+                    let s = m.as_str();
+                    // 反转义常见转义
+                    let unescaped = s
+                        .replace("\\n", "\n")
+                        .replace("\\\"", "\"")
+                        .replace("\\\\", "\\")
+                        .replace("\\t", "\t");
+                    return Some(unescaped);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn extract_json_span(s: &str) -> Option<&str> {

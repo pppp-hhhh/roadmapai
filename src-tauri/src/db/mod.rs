@@ -1,4 +1,4 @@
-use crate::models::{Flashcard, Resource, Roadmap, Settings, Stage, Task};
+use crate::models::{ApiConfig, ChatMessageRow, ChatSession, Favorite, Flashcard, Resource, Roadmap, Settings, Stage, Task};
 use chrono::{DateTime, Utc};
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use tauri::{AppHandle, Manager};
@@ -151,7 +151,115 @@ impl Database {
                 .await
                 .map_err(|e| format!("数据库迁移失败: {}", e))?;
 
-            info!("数据库迁移 v2 完成：添加 metadata 列");
+            info!("数据库迁移 v2 完成:添加 metadata 列");
+        }
+
+        // v3 (v1.1): favorites table for AI-loop close-the-loop
+        if current_version < 3 {
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS favorites (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    type TEXT NOT NULL,           -- 'task' | 'resource' | 'message' | 'flashcard'
+                    ref_id TEXT NOT NULL,
+                    roadmap_id TEXT,
+                    title TEXT NOT NULL,
+                    preview TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(type, ref_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_favorites_type ON favorites(type);
+                CREATE INDEX IF NOT EXISTS idx_favorites_roadmap ON favorites(roadmap_id);
+                "#,
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("数据库迁移 v3 失败: {}", e))?;
+
+            sqlx::query("INSERT INTO _schema_version (version) VALUES (3)")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v3 记录失败: {}", e))?;
+
+            info!("数据库迁移 v3 完成:添加 favorites 表");
+        }
+
+        // v4 (v1.1): 独立 api_configs 表,替换 api_keys 表里塞的 base_url/model/type
+        if current_version < 4 {
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS api_configs (
+                    provider TEXT PRIMARY KEY NOT NULL,
+                    base_url TEXT NOT NULL DEFAULT '',
+                    model TEXT NOT NULL DEFAULT '',
+                    provider_type TEXT NOT NULL DEFAULT 'openai'
+                );
+
+                -- 从旧 api_keys 表迁移数据(若有)
+                INSERT OR IGNORE INTO api_configs (provider, base_url, model, provider_type)
+                SELECT
+                    replace(replace(provider, '_base_url', ''), '_model', '') AS provider,
+                    '' AS base_url,
+                    '' AS model,
+                    'openai' AS provider_type
+                FROM api_keys
+                WHERE provider LIKE '%_base_url' OR provider LIKE '%_model' OR provider LIKE '%_provider_type'
+                GROUP BY provider;
+
+                -- 清理 api_keys 里被滥用的字段
+                DELETE FROM api_keys
+                WHERE provider LIKE '%_base_url'
+                   OR provider LIKE '%_model'
+                   OR provider LIKE '%_provider_type';
+                "#,
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("数据库迁移 v4 失败: {}", e))?;
+
+            sqlx::query("INSERT INTO _schema_version (version) VALUES (4)")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v4 记录失败: {}", e))?;
+
+            info!("数据库迁移 v4 完成:独立 api_configs 表");
+        }
+
+        // v5 (v1.1): chat_sessions + chat_messages 实现多轮对话记忆
+        if current_version < 5 {
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    roadmap_id TEXT,
+                    title TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,           -- 'user' | 'assistant' | 'system'
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chat_messages_session
+                    ON chat_messages(session_id, created_at);
+                "#,
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("数据库迁移 v5 失败: {}", e))?;
+
+            sqlx::query("INSERT INTO _schema_version (version) VALUES (5)")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v5 记录失败: {}", e))?;
+
+            info!("数据库迁移 v5 完成:chat_sessions / chat_messages 表");
         }
 
         // Add future migrations here as `if current_version < N { ... }` blocks
@@ -637,6 +745,89 @@ impl Database {
         Ok(())
     }
 
+    // ============ Favorites DAO (v1.1) ============
+
+    pub async fn list_favorites(&self, filter_type: Option<&str>) -> Result<Vec<Favorite>, String> {
+        let favorites = if let Some(t) = filter_type {
+            sqlx::query_as::<_, Favorite>(
+                r#"
+                SELECT id, type, ref_id, roadmap_id, title, preview, created_at
+                FROM favorites
+                WHERE type = ?
+                ORDER BY created_at DESC
+                "#,
+            )
+            .bind(t)
+            .fetch_all(&self.pool)
+            .await
+        } else {
+            sqlx::query_as::<_, Favorite>(
+                r#"
+                SELECT id, type, ref_id, roadmap_id, title, preview, created_at
+                FROM favorites
+                ORDER BY created_at DESC
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await
+        }
+        .map_err(|e| format!("无法获取收藏列表: {}", e))?;
+
+        Ok(favorites)
+    }
+
+    pub async fn add_favorite(&self, fav: &Favorite) -> Result<Favorite, String> {
+        sqlx::query(
+            r#"
+            INSERT INTO favorites (id, type, ref_id, roadmap_id, title, preview, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(type, ref_id) DO UPDATE SET
+                title = excluded.title,
+                preview = excluded.preview,
+                roadmap_id = excluded.roadmap_id
+            "#,
+        )
+        .bind(&fav.id)
+        .bind(&fav.fav_type)
+        .bind(&fav.ref_id)
+        .bind(&fav.roadmap_id)
+        .bind(&fav.title)
+        .bind(&fav.preview)
+        .bind(fav.created_at.to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("无法添加收藏: {}", e))?;
+
+        // ON CONFLICT 后返回最新记录
+        let stored = sqlx::query_as::<_, Favorite>(
+            "SELECT id, type, ref_id, roadmap_id, title, preview, created_at FROM favorites WHERE type = ? AND ref_id = ?",
+        )
+        .bind(&fav.fav_type)
+        .bind(&fav.ref_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| format!("无法读取刚添加的收藏: {}", e))?;
+
+        Ok(stored)
+    }
+
+    pub async fn remove_favorite(&self, id: &str) -> Result<(), String> {
+        sqlx::query("DELETE FROM favorites WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除收藏: {}", e))?;
+        Ok(())
+    }
+
+    pub async fn count_favorites(&self) -> Result<i32, String> {
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM favorites")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| format!("无法统计收藏: {}", e))?;
+        Ok(count.0 as i32)
+    }
+
     // ============ API Key DAO ============
 
     pub async fn save_api_key(&self, provider: &str, api_key: &str) -> Result<(), String> {
@@ -667,7 +858,7 @@ impl Database {
         Ok(result.map(|(key,)| key))
     }
 
-    // ============ Custom API Config DAO ============
+    // ============ API Config DAO (v1.1 重构) ============
 
     pub async fn save_api_config(
         &self,
@@ -676,75 +867,135 @@ impl Database {
         model: &str,
         provider_type: Option<&str>,
     ) -> Result<(), String> {
+        let pt = provider_type.unwrap_or("openai");
         sqlx::query(
             r#"
-            INSERT OR REPLACE INTO api_keys (provider, api_key)
-            VALUES (?, ?)
+            INSERT OR REPLACE INTO api_configs (provider, base_url, model, provider_type)
+            VALUES (?, ?, ?, ?)
             "#,
         )
-        .bind(format!("{}_base_url", provider))
+        .bind(provider)
         .bind(base_url)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| format!("无法保存 base_url: {}", e))?;
-
-        sqlx::query(
-            r#"
-            INSERT OR REPLACE INTO api_keys (provider, api_key)
-            VALUES (?, ?)
-            "#,
-        )
-        .bind(format!("{}_model", provider))
         .bind(model)
+        .bind(pt)
         .execute(&self.pool)
         .await
-        .map_err(|e| format!("无法保存模型: {}", e))?;
-
-        if let Some(pt) = provider_type {
-            sqlx::query(
-                r#"
-                INSERT OR REPLACE INTO api_keys (provider, api_key)
-                VALUES (?, ?)
-                "#,
-            )
-            .bind(format!("{}_provider_type", provider))
-            .bind(pt)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| format!("无法保存 provider_type: {}", e))?;
-        }
+        .map_err(|e| format!("无法保存 API 配置: {}", e))?;
 
         Ok(())
     }
 
-    pub async fn get_api_config(&self, provider: &str) -> Result<(Option<String>, Option<String>, Option<String>), String> {
-        let base_url = sqlx::query_as::<_, (String,)>(
-            "SELECT api_key FROM api_keys WHERE provider = ?",
+    pub async fn get_api_config(
+        &self,
+        provider: &str,
+    ) -> Result<Option<ApiConfig>, String> {
+        let config = sqlx::query_as::<_, ApiConfig>(
+            "SELECT provider, base_url, model, provider_type FROM api_configs WHERE provider = ?",
         )
-        .bind(format!("{}_base_url", provider))
+        .bind(provider)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| format!("无法获取 base_url: {}", e))?
-        .map(|(key,)| key);
+        .map_err(|e| format!("无法获取 API 配置: {}", e))?;
+        Ok(config)
+    }
 
-        let model = sqlx::query_as::<_, (String,)>(
-            "SELECT api_key FROM api_keys WHERE provider = ?",
+    // ============ Chat Session DAO (v1.1) ============
+
+    pub async fn ensure_chat_session(&self, id: &str, roadmap_id: Option<&str>) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO chat_sessions (id, roadmap_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            "#,
         )
-        .bind(format!("{}_model", provider))
-        .fetch_optional(&self.pool)
+        .bind(id)
+        .bind(roadmap_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
         .await
-        .map_err(|e| format!("无法获取模型: {}", e))?
-        .map(|(key,)| key);
+        .map_err(|e| format!("无法创建 chat session: {}", e))?;
+        Ok(())
+    }
 
-        let provider_type = sqlx::query_as::<_, (String,)>(
-            "SELECT api_key FROM api_keys WHERE provider = ?",
+    pub async fn touch_chat_session(&self, id: &str) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query("UPDATE chat_sessions SET updated_at = ? WHERE id = ?")
+            .bind(&now)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法更新 chat session: {}", e))?;
+        Ok(())
+    }
+
+    pub async fn append_chat_message(
+        &self,
+        id: &str,
+        session_id: &str,
+        role: &str,
+        content: &str,
+    ) -> Result<ChatMessageRow, String> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            r#"
+            INSERT INTO chat_messages (id, session_id, role, content, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
         )
-        .bind(format!("{}_provider_type", provider))
-        .fetch_optional(&self.pool)
+        .bind(id)
+        .bind(session_id)
+        .bind(role)
+        .bind(content)
+        .bind(&now)
+        .execute(&self.pool)
         .await
-        .map_err(|e| format!("无法获取 provider_type: {}", e))?
-        .map(|(key,)| key);
+        .map_err(|e| format!("无法插入 chat message: {}", e))?;
 
-        Ok((base_url, model, provider_type))
+        let row = sqlx::query_as::<_, ChatMessageRow>(
+            "SELECT id, session_id, role, content, created_at FROM chat_messages WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| format!("无法读取刚插入的 chat message: {}", e))?;
+        Ok(row)
+    }
+
+    /// 拉取 session 最近 N 条消息,按时间升序
+    pub async fn get_chat_history(
+        &self,
+        session_id: &str,
+        limit: i64,
+    ) -> Result<Vec<ChatMessageRow>, String> {
+        let rows = sqlx::query_as::<_, ChatMessageRow>(
+            r#"
+            SELECT id, session_id, role, content, created_at
+            FROM chat_messages
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(session_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| format!("无法读取 chat 历史: {}", e))?;
+        // 翻转成时间升序
+        let mut rows = rows;
+        rows.reverse();
+        Ok(rows)
+    }
+
+    pub async fn list_chat_sessions(&self) -> Result<Vec<ChatSession>, String> {
+        let rows = sqlx::query_as::<_, ChatSession>(
+            "SELECT id, roadmap_id, title, created_at, updated_at FROM chat_sessions ORDER BY updated_at DESC LIMIT 50",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| format!("无法列出 chat session: {}", e))?;
+        Ok(rows)
     }
 }

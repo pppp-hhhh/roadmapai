@@ -326,7 +326,11 @@ pub fn build_task_content_prompt(topic: &str, stage_title: &str, stage_descripti
 
 类型：{task_type} | 阶段：{stage_title} | 目标：{stage_description}
 
-输出 JSON（不要推理）：
+【重要】直接返回 JSON,不要输出任何思考、推理、分析、解释、注释。
+【重要】不要使用 <think>、### 思考、Reasoning: 等任何形式的思考块。
+【重要】第一条字符必须是 {{,最后一条字符必须是 }}。
+
+输出 JSON:
 {{
   "content": "Markdown学习内容，200-400字。包含概念、原理、应用。禁止用 \\$ \\# \\& 非法转义",
   "code_example": "代码示例（{topic}相关，如适用）",

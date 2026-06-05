@@ -6,6 +6,13 @@ import remarkGfm from 'remark-gfm';
 import { lowlight } from '../utils/markdown';
 import { useChatStore } from '../stores/useChatStore';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
+import {
+  MessageActions,
+  MessageToFlashcardDrawer,
+  MessageToTaskDrawer,
+  PENDING_KEY,
+} from '../components/ai-loop';
+import { ErrorState } from '../components/states';
 
 const suggestedPrompts = [
   { icon: BookOpen, text: '用通俗易懂的话解释一个概念', color: 'text-blue-500' },
@@ -21,6 +28,10 @@ export default function AiTutorPage() {
   const [selectedRoadmapId, setSelectedRoadmapId] = useState<string>('');
   const [showRoadmapDropdown, setShowRoadmapDropdown] = useState(false);
 
+  // AI 闭环抽屉状态
+  const [flashcardDrawerMsg, setFlashcardDrawerMsg] = useState<{ id: string; content: string } | null>(null);
+  const [taskDrawerMsg, setTaskDrawerMsg] = useState<{ id: string; content: string } | null>(null);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -34,6 +45,23 @@ export default function AiTutorPage() {
       fetchRoadmap(selectedRoadmapId);
     }
   }, [selectedRoadmapId, fetchRoadmap]);
+
+  // 读取 sessionStorage 中的待发消息(回路 ③ 跨页接续)
+  useEffect(() => {
+    const pending = sessionStorage.getItem(PENDING_KEY);
+    if (pending && !isStreaming) {
+      sessionStorage.removeItem(PENDING_KEY);
+      // 给一个 tick 让 input 挂载
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.value = pending;
+          // 触发 send
+          const ev = new Event('submit', { bubbles: true, cancelable: true });
+          (inputRef.current.form as HTMLFormElement | null)?.dispatchEvent(ev);
+        }
+      }, 0);
+    }
+  }, [isStreaming]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,11 +212,23 @@ export default function AiTutorPage() {
                 }`}>
                   {message.role === 'assistant' ? (
                     message.content ? (
-                      <div className="markdown-content prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>
-                          {message.content}
-                        </ReactMarkdown>
-                      </div>
+                      <>
+                        <div className="markdown-content prose prose-sm dark:prose-invert max-w-none">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
+                        <MessageActions
+                          content={message.content}
+                          messageId={message.id}
+                          onOpenFlashcardDrawer={() =>
+                            setFlashcardDrawerMsg({ id: message.id, content: message.content })
+                          }
+                          onOpenTaskDrawer={() =>
+                            setTaskDrawerMsg({ id: message.id, content: message.content })
+                          }
+                        />
+                      </>
                     ) : null
                   ) : (
                     <p className="whitespace-pre-wrap text-sm">{message.content.replace(/\n\n$/, '')}</p>
@@ -217,10 +257,13 @@ export default function AiTutorPage() {
             </div>
           )}
           {error && (
-            <div className="flex gap-4 justify-center">
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl px-5 py-3 text-red-600 dark:text-red-400 text-sm shadow-md">
-                {error}
-              </div>
+            <div className="flex justify-center">
+              <ErrorState
+                variant="card"
+                level="api"
+                error={error}
+                onRetry={() => sendMessage(messages[messages.length - 1]?.content ?? '')}
+              />
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -241,6 +284,22 @@ export default function AiTutorPage() {
           </button>
         </form>
       </div>
+
+      {/* AI 闭环抽屉 */}
+      {flashcardDrawerMsg && (
+        <MessageToFlashcardDrawer
+          isOpen={!!flashcardDrawerMsg}
+          onClose={() => setFlashcardDrawerMsg(null)}
+          content={flashcardDrawerMsg.content}
+        />
+      )}
+      {taskDrawerMsg && (
+        <MessageToTaskDrawer
+          isOpen={!!taskDrawerMsg}
+          onClose={() => setTaskDrawerMsg(null)}
+          content={taskDrawerMsg.content}
+        />
+      )}
     </div>
   );
 }

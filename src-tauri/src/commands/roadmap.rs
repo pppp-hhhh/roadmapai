@@ -59,8 +59,10 @@ async fn call_openai_compatible(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "temperature": 0.7,
+        "temperature": 0.4,
         "max_tokens": max_tokens,
+        // DeepSeek 专用:关闭链式推理,避免 thinking 把输出 token 灌满
+        "reasoning_effort": "low",
     });
 
     info!("  📤 发送请求 → 模型={model}, 输入~{est_input_tokens}tok, max_output={max_tokens}tok");
@@ -218,7 +220,7 @@ fn stage_details_to_models(
             objective: detail.description,
             estimated_hours: 4.0,
             stage_type,
-            is_locked: detail.order > 1,
+            is_locked: detail.order > 1 && !detail.is_fallback,
             quiz_json: None,
             pass_threshold: 0.7,
             metadata,
@@ -272,22 +274,19 @@ pub async fn generate_roadmap(
     info!("========== 开始生成学习路线（并行模式）==========");
     info!("主题：「{}」| 水平：{} | 目标：{}", params.topic, params.level, params.goal);
 
-    // 1. Load settings
-    let settings = {
+    // 1. Load settings + API key + custom config (single lock acquisition)
+    let (settings, api_key, (base_url_opt, model_opt, provider_type_opt)) = {
         let db = state.db.lock().await;
-        db.get_settings().await?
-    };
-
-    let api_key = {
-        let db = state.db.lock().await;
-        db.get_api_key(&settings.ai_provider)
+        let settings = db.get_settings().await?;
+        let api_key = db.get_api_key(&settings.ai_provider)
             .await?
-            .ok_or_else(|| format!("{} 的 API Key 未找到，请在设置中配置 API Key", settings.ai_provider))?
-    };
-
-    let (base_url_opt, model_opt, provider_type_opt) = {
-        let db = state.db.lock().await;
-        db.get_api_config(&settings.ai_provider).await?
+            .ok_or_else(|| format!("{} 的 API Key 未找到，请在设置中配置 API Key", settings.ai_provider))?;
+        let cfg = db.get_api_config(&settings.ai_provider).await?;
+        let (base_url, model, provider_type) = match cfg {
+            Some(c) => (Some(c.base_url), Some(c.model), Some(c.provider_type)),
+            None => (None, None, None),
+        };
+        (settings, api_key, (base_url, model, provider_type))
     };
 
     // 决定 provider_type：优先用保存的，否则按 settings.ai_provider 推断
@@ -456,8 +455,8 @@ pub async fn generate_roadmap(
                 let prompt = build_task_content_prompt(&stage_title, &stage_title, &stage_desc, &task_title, &task_type);
                 let raw = match call_ai(
                     &client, &provider_type_t, &base_url, &model, &api_key,
-                    "你是学习内容专家。严格按 JSON 格式返回。",
-                    &prompt, 10000,
+                    "你是学习内容专家。严格按 JSON 格式返回。不要输出任何思考/推理,直接返回 JSON。",
+                    &prompt, 5000,
                 ).await {
                     Ok(r) => Some(r),
                     Err(e) => { warn!("  [L3-任务{}] ✘ AI 调用失败：{}", order, e); None }
@@ -706,7 +705,7 @@ pub async fn generate_roadmap(
             estimated_hours: stage.estimated_hours,
             stage_type: stage.stage_type.clone(),
             is_locked: stage.is_locked,
-            is_fallback: stage.metadata.as_deref().map(|s| s.contains("\"is_fallback\":true")).unwrap_or(false),
+            is_fallback: stage.metadata.as_deref().and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()).and_then(|v| v["is_fallback"].as_bool()).unwrap_or(false),
             pass_threshold: stage.pass_threshold,
             tasks: task_responses,
             quiz: None,
@@ -776,7 +775,7 @@ pub async fn get_roadmap(
             estimated_hours: stage.estimated_hours,
             stage_type: stage.stage_type,
             is_locked: stage.is_locked,
-            is_fallback: stage.metadata.as_deref().map(|s| s.contains("\"is_fallback\":true")).unwrap_or(false),
+            is_fallback: stage.metadata.as_deref().and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()).and_then(|v| v["is_fallback"].as_bool()).unwrap_or(false),
             pass_threshold: stage.pass_threshold,
             tasks: task_responses,
             quiz,
@@ -948,6 +947,69 @@ pub async fn update_resource(
 }
 
 #[tauri::command]
+pub async fn add_task_to_stage(
+    state: State<'_, AppState>,
+    stage_id: String,
+    title: String,
+    content: String,
+    task_type: String,
+    minutes: Option<u32>,
+) -> Result<crate::models::TaskResponse, String> {
+    info!("AI 闭环:向阶段 {} 添加任务「{}」", stage_id, title);
+
+    // 校验 task_type 在白名单
+    let valid_types = ["reading", "exercise", "project", "video", "quiz"];
+    if !valid_types.contains(&task_type.as_str()) {
+        return Err(format!("非法的 task_type: {}", task_type));
+    }
+
+    // 验证阶段存在
+    let _stage = {
+        let db = state.db.lock().await;
+        db.get_stage_by_id(&stage_id).await?
+            .ok_or_else(|| "阶段不存在".to_string())?
+    };
+
+    // content 头部加一行提示用户来源(可选)
+    let minutes_note = minutes
+        .filter(|m| *m > 0)
+        .map(|m| format!("\n\n⏱ 预计时长:{} 分钟(由 AI 导师对话生成)", m))
+        .unwrap_or_default();
+    let final_content = format!("{}{}", content, minutes_note);
+
+    let task_id = Uuid::new_v4().to_string();
+    let task = Task {
+        id: task_id.clone(),
+        stage_id: stage_id.clone(),
+        title: title.trim().to_string(),
+        content: final_content,
+        task_type,
+        code_example: None,
+        exercise: None,
+        is_completed: false,
+        completed_at: None,
+    };
+
+    // 写入
+    {
+        let db = state.db.lock().await;
+        db.create_task(&task).await?;
+    }
+
+    info!("✔ 任务创建成功: {}", task_id);
+
+    Ok(crate::models::TaskResponse {
+        id: task.id,
+        title: task.title,
+        content: task.content,
+        task_type: task.task_type,
+        code_example: task.code_example,
+        exercise: task.exercise,
+        resources: vec![],
+    })
+}
+
+#[tauri::command]
 pub async fn delete_resource(
     state: State<'_, AppState>,
     id: String,
@@ -966,15 +1028,18 @@ pub async fn retry_stage(
 ) -> Result<crate::models::StageResponse, String> {
     info!("正在重新生成阶段：{}", stage_id);
 
-    // Load settings + config
-    let settings = { let db = state.db.lock().await; db.get_settings().await? };
-    let api_key = {
+    // Load settings + API key + custom config (single lock acquisition)
+    let (_settings, api_key, (base_url_opt, model_opt, provider_type_opt)) = {
         let db = state.db.lock().await;
-        db.get_api_key(&settings.ai_provider).await?
-            .ok_or_else(|| format!("{} 的 API Key not found", settings.ai_provider))?
-    };
-    let (base_url_opt, model_opt, provider_type_opt) = {
-        let db = state.db.lock().await; db.get_api_config(&settings.ai_provider).await?
+        let settings = db.get_settings().await?;
+        let api_key = db.get_api_key(&settings.ai_provider).await?
+            .ok_or_else(|| format!("{} 的 API Key not found", settings.ai_provider))?;
+        let cfg = db.get_api_config(&settings.ai_provider).await?;
+        let (b, m, p) = match cfg {
+            Some(c) => (Some(c.base_url), Some(c.model), Some(c.provider_type)),
+            None => (None, None, None),
+        };
+        (settings, api_key, (b, m, p))
     };
     let provider_type = provider_type_opt.unwrap_or_else(|| "openai".to_string());
     let base_url = base_url_opt.unwrap_or_else(|| "https://api.openai.com/v1".to_string());
@@ -1032,8 +1097,8 @@ pub async fn retry_stage(
             let prompt = build_task_content_prompt(&stage_title, &stage_title, &stage_desc, &task_title, &task_type);
             let raw = call_ai(
                 &client, &provider_type, &base_url, &model, &api_key,
-                "你是学习内容专家。严格按 JSON 格式返回。",
-                &prompt, 6000,
+                "你是学习内容专家。严格按 JSON 格式返回。不要输出任何思考/推理,直接返回 JSON。",
+                &prompt, 5000,
             ).await.map_err(|e| format!("L3 失败: {}", e))?;
 
             crate::services::roadmap_parser::parse_task_content_response(&raw, order, &task_title, &task_type)

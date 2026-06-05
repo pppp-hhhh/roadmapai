@@ -103,6 +103,26 @@ pub struct ChatMessage {
     pub timestamp: DateTime<Utc>,
 }
 
+/// ChatSession (v1.1) - 多轮对话持久化
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ChatSession {
+    pub id: String,
+    pub roadmap_id: Option<String>,
+    pub title: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// ChatMessageRow (v1.1) - 数据库行
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ChatMessageRow {
+    pub id: String,
+    pub session_id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
 /// Settings - User preferences
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Settings {
@@ -112,11 +132,54 @@ pub struct Settings {
     pub default_weekly_hours: i32,
 }
 
+/// Favorite - AI 闭环 v1.1 收藏夹
+/// `type` 是 SQL 关键字,因此 Rust 字段叫 `fav_type`,通过 serde rename 为 `type`
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Favorite {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub fav_type: String,
+    pub ref_id: String,
+    pub roadmap_id: Option<String>,
+    pub title: String,
+    pub preview: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl Favorite {
+    pub fn new(
+        fav_type: String,
+        ref_id: String,
+        roadmap_id: Option<String>,
+        title: String,
+        preview: Option<String>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            fav_type,
+            ref_id,
+            roadmap_id,
+            title,
+            preview,
+            created_at: Utc::now(),
+        }
+    }
+}
+
 /// API Key storage (for secure storage plugin)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyEntry {
     pub provider: String,
     pub key: String,
+}
+
+/// API Config (v1.1 重构) — 与 ApiKey 分离
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ApiConfig {
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    pub provider_type: String,
 }
 
 // Request/Response types for AI services

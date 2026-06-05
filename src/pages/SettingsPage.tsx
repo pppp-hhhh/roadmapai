@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Key, Settings as SettingsIcon, Check, X, Loader2, Save, ChevronDown, Sun, Moon, Search, Zap } from 'lucide-react';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useOnboardingStore } from '../stores/useOnboardingStore';
 
 export default function SettingsPage() {
   const {
@@ -97,6 +98,10 @@ export default function SettingsPage() {
       await saveApiConfig(config.providerType, config.baseUrl, config.model, config.providerType);
       setAiProvider(config.providerType);
 
+      // 立即通知 sidebar 更新"待配置"徽标
+      const { useSidebarStore } = await import('../stores/useSidebarStore');
+      useSidebarStore.getState().setApiStatus(config.providerType, !!config.apiKey.trim());
+
       // Save Tavily key
       await saveApiKey('tavily', tavilyKey);
 
@@ -144,11 +149,24 @@ export default function SettingsPage() {
   return (
     <div className="h-full overflow-auto p-8">
       <div className="max-w-2xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">设置</h1>
-          <p className="text-gray-500 dark:text-gray-400">
-            配置你的 AI API 设置
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">设置</h1>
+            <p className="text-gray-500 dark:text-gray-400">
+              配置你的 AI API 设置
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (confirm('确定重新运行新手引导?这将清空当前引导进度。')) {
+                useOnboardingStore.getState().reset();
+                window.location.assign('/onboarding');
+              }
+            }}
+            className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
+          >
+            重新运行新手引导
+          </button>
         </div>
 
         <div className="space-y-8">

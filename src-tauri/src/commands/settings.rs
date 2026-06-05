@@ -77,11 +77,21 @@ pub async fn get_api_config(
     provider: String,
 ) -> Result<ApiConfigResponse, String> {
     let db = state.db.lock().await;
-    let (base_url, model, provider_type) = db.get_api_config(&provider).await?;
+    let cfg = db.get_api_config(&provider).await?;
 
-    match (base_url, model) {
-        (Some(base_url), Some(model)) => Ok(ApiConfigResponse { base_url, model, provider_type: provider_type.unwrap_or_default(), found: true }),
-        _ => Ok(ApiConfigResponse { base_url: String::new(), model: String::new(), provider_type: String::new(), found: false }),
+    match cfg {
+        Some(c) if !c.base_url.is_empty() && !c.model.is_empty() => Ok(ApiConfigResponse {
+            base_url: c.base_url,
+            model: c.model,
+            provider_type: c.provider_type,
+            found: true,
+        }),
+        _ => Ok(ApiConfigResponse {
+            base_url: String::new(),
+            model: String::new(),
+            provider_type: String::new(),
+            found: false,
+        }),
     }
 }
 
@@ -140,6 +150,50 @@ pub async fn test_connection(
         Err(e) => {
             info!("{} 连接测试失败：{}", provider, e);
             Err(e)
+        }
+    }
+}
+
+/// GeoIP 检测用户所在大区,用于 Onboarding 推荐 provider。
+/// 使用 ip-api.com 免费端点(无需 key,45 请求/分钟)。
+/// 失败一律回退 'other'。
+#[tauri::command]
+pub async fn detect_user_region() -> Result<String, String> {
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    match client
+        .get("http://ip-api.com/json/?fields=countryCode")
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(json) => {
+                    let code = json["countryCode"].as_str().unwrap_or("");
+                    let region = match code {
+                        "CN" | "HK" | "TW" | "MO" => "cn",
+                        "US" | "CA" | "GB" | "DE" | "FR" | "JP" | "KR" | "SG" | "AU" => "us",
+                        _ => "other",
+                    };
+                    info!("GeoIP 识别: country={}, region={}", code, region);
+                    Ok(region.to_string())
+                }
+                Err(e) => {
+                    info!("GeoIP 解析失败,降级: {}", e);
+                    Ok("other".to_string())
+                }
+            }
+        }
+        Ok(resp) => {
+            info!("GeoIP HTTP {} 失败,降级", resp.status());
+            Ok("other".to_string())
+        }
+        Err(e) => {
+            info!("GeoIP 请求失败(可能离线),降级: {}", e);
+            Ok("other".to_string())
         }
     }
 }

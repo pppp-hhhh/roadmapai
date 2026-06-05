@@ -182,7 +182,26 @@ pub async fn learn_flashcard(
     card_id: String,
 ) -> Result<(), String> {
     let db = state.db.lock().await;
-    db.mark_flashcard_learned(&card_id).await?;
-    info!("已学习记忆卡：{}，明天开始复习", card_id);
+
+    // 把"学习"视为 quality=4 的首次成功复习,走完整 SM-2
+    // (repetitions=0 → 1, interval=1, ease_factor 微调)
+    let card = db
+        .get_flashcard_by_id(&card_id)
+        .await?
+        .ok_or("未找到记忆卡")?;
+
+    let (repetitions, ease_factor, interval, next_review) = calculate_sm2(
+        card.repetitions,
+        card.ease_factor,
+        card.interval,
+        4, // 良好首次学习
+    );
+
+    db.update_flashcard_review(&card_id, repetitions, ease_factor, interval, next_review)
+        .await?;
+    info!(
+        "已学习记忆卡：{}，下次复习={}",
+        card_id, next_review
+    );
     Ok(())
 }

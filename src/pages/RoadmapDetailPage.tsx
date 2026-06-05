@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle2, Circle, ExternalLink, BookOpen,
   Video, Code, FileText, HelpCircle, X, Lock, Play,
-  ChevronDown, ChevronRight, AlertTriangle, Pencil, Trash2, Plus, Save,
+  ChevronDown, ChevronRight, AlertTriangle, Plus, MessageCircle, Star,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -12,7 +12,9 @@ import { lowlight } from '../utils/markdown';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 import QuizModal from '../components/QuizModal';
 import { openExternalLink } from '../utils/links';
-import type { Stage, Resource } from '../types';
+import type { Stage, Resource, Task } from '../types';
+import { TaskToTutorDrawer, ResourceDrawer } from '../components/ai-loop';
+import { useFavoriteStore } from '../stores/useFavoriteStore';
 
 const taskTypeIcons: Record<string, typeof BookOpen> = {
   reading: BookOpen, video: Video, exercise: Code, project: FileText, quiz: HelpCircle,
@@ -28,16 +30,23 @@ const taskTypeColors: Record<string, string> = {
 export default function RoadmapDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentRoadmap, isLoading, fetchRoadmap, markTaskCompleted, submitQuiz, addResource, updateResource, deleteResource, retryStage } = useRoadmapStore();
+  const { currentRoadmap, isLoading, fetchRoadmap, markTaskCompleted, submitQuiz, deleteResource, retryStage } = useRoadmapStore();
+  const { addFavorite, removeFavorite, isFavorited, favorites } = useFavoriteStore();
   const [selectedStage, setSelectedStage] = useState<Stage | null>(null);
   const [showStageModal, setShowStageModal] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [quizStage, setQuizStage] = useState<Stage | null>(null);
   const [showQuizModal, setShowQuizModal] = useState(false);
-  const [editingResource, setEditingResource] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ title: '', url: '', snippet: '', resource_type: 'article' });
-  const [addingToTask, setAddingToTask] = useState<string | null>(null);
-  const [addForm, setAddForm] = useState({ title: '', url: '', snippet: '', resource_type: 'article' });
+
+  // 资源编辑改用 SideDrawer (v1.1 A-4)
+  const [resourceDrawer, setResourceDrawer] = useState<{
+    mode: 'add' | 'edit';
+    taskId: string;
+    resource: Resource | null;
+  } | null>(null);
+
+  // 任务 → AI 提问 (v1.1 A-3)
+  const [tutorTask, setTutorTask] = useState<Task | null>(null);
 
   useEffect(() => { if (id) fetchRoadmap(id); }, [id, fetchRoadmap]);
 
@@ -72,28 +81,9 @@ export default function RoadmapDetailPage() {
     return result;
   };
 
-  const handleEditResource = (r: Resource) => {
-    setEditingResource(r.id);
-    setEditForm({ title: r.title, url: r.url, snippet: r.snippet || '', resource_type: r.resource_type });
-  };
-
-  const handleSaveResource = async () => {
-    if (!editingResource || !editForm.title || !editForm.url) return;
-    await updateResource(editingResource, editForm.title, editForm.url, editForm.snippet, editForm.resource_type);
-    setEditingResource(null);
-    if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
-  };
-
   const handleDeleteResource = async (resourceId: string) => {
+    if (!confirm('确定删除此资源?')) return;
     await deleteResource(resourceId);
-    if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
-  };
-
-  const handleAddResource = async () => {
-    if (!addingToTask || !addForm.title || !addForm.url) return;
-    await addResource(addingToTask, addForm.title, addForm.url, addForm.snippet, addForm.resource_type);
-    setAddingToTask(null);
-    setAddForm({ title: '', url: '', snippet: '', resource_type: 'article' });
     if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
   };
 
@@ -104,70 +94,83 @@ export default function RoadmapDetailPage() {
     return stage.tasks.length > 0 && getCompletedTaskCount(stage) === stage.tasks.length;
   };
 
-  const renderResourceCard = (r: Resource) => (
-    <div key={r.id} className="shrink-0 w-56 bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-100 dark:border-gray-700 group relative">
-      {editingResource === r.id ? (
-        <div className="space-y-2">
-          <input value={editForm.title} onChange={e => setEditForm({ ...editForm, title: e.target.value })}
-            placeholder="标题" className="w-full text-xs px-2 py-1 border rounded bg-gray-50 dark:bg-gray-700 dark:text-white" />
-          <input value={editForm.url} onChange={e => setEditForm({ ...editForm, url: e.target.value })}
-            placeholder="URL" className="w-full text-xs px-2 py-1 border rounded bg-gray-50 dark:bg-gray-700 dark:text-white" />
-          <input value={editForm.snippet} onChange={e => setEditForm({ ...editForm, snippet: e.target.value })}
-            placeholder="推荐理由" className="w-full text-xs px-2 py-1 border rounded bg-gray-50 dark:bg-gray-700 dark:text-white" />
-          <select value={editForm.resource_type} onChange={e => setEditForm({ ...editForm, resource_type: e.target.value })}
-            className="w-full text-xs px-2 py-1 border rounded bg-gray-50 dark:bg-gray-700 dark:text-white">
-            <option value="article">文章</option><option value="video">视频</option><option value="course">课程</option><option value="documentation">文档</option>
-          </select>
-          <div className="flex gap-2">
-            <button onClick={handleSaveResource} className="flex-1 py-1 bg-primary-500 text-white rounded text-xs"><Save size={12} className="inline mr-1" />保存</button>
-            <button onClick={() => setEditingResource(null)} className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">取消</button>
+  const renderResourceCard = (r: Resource) => {
+    const favorited = isFavorited('resource', r.id);
+    return (
+      <div key={r.id} className="shrink-0 w-56 bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-100 dark:border-gray-700 group relative">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs text-primary-500 font-medium">
+            {r.resource_type === 'video' ? '视频' : r.resource_type === 'course' ? '课程' : r.resource_type === 'article' ? '文章' : '文档'}
+          </div>
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (favorited) {
+                  const f = favorites.find((x) => x.type === 'resource' && x.ref_id === r.id);
+                  if (f) removeFavorite(f.id);
+                } else {
+                  addFavorite({
+                    type: 'resource',
+                    ref_id: r.id,
+                    roadmap_id: currentRoadmap?.id ?? null,
+                    title: r.title,
+                    preview: r.snippet ?? null,
+                  });
+                }
+              }}
+              className="p-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded"
+              title={favorited ? '取消收藏' : '收藏'}
+            >
+              <Star
+                size={12}
+                className={favorited ? 'fill-amber-400 text-amber-500' : 'text-gray-400'}
+              />
+            </button>
+            <button
+              onClick={(evt) => {
+                evt.stopPropagation();
+                setResourceDrawer({ mode: 'edit', taskId: '', resource: r });
+              }}
+              className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-500"
+              title="编辑"
+            >
+              <Plus size={12} className="rotate-45" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteResource(r.id);
+              }}
+              className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500"
+              title="删除"
+            >
+              ×
+            </button>
           </div>
         </div>
-      ) : (
-        <>
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-xs text-primary-500 font-medium">
-              {r.resource_type === 'video' ? '视频' : r.resource_type === 'course' ? '课程' : r.resource_type === 'article' ? '文章' : '文档'}
-            </div>
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button onClick={(e) => { e.stopPropagation(); handleEditResource(r); }} className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"><Pencil size={12} /></button>
-              <button onClick={(e) => { e.stopPropagation(); handleDeleteResource(r.id); }} className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500"><Trash2 size={12} /></button>
-            </div>
+        <button onClick={() => openExternalLink(r.url)} className="w-full text-left">
+          <div className="text-sm font-medium text-gray-900 dark:text-white mb-1 line-clamp-2 hover:text-primary-600 dark:hover:text-primary-400">
+            {r.title}
           </div>
-          <button onClick={() => openExternalLink(r.url)} className="w-full text-left">
-            <div className="text-sm font-medium text-gray-900 dark:text-white mb-1 line-clamp-2 hover:text-primary-600 dark:hover:text-primary-400">{r.title}</div>
-            {r.snippet && <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">{r.snippet}</div>}
-            <div className="flex items-center gap-1 mt-2 text-xs text-primary-500"><ExternalLink size={12} /><span>打开</span></div>
-          </button>
-        </>
-      )}
-    </div>
-  );
+          {r.snippet && <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">{r.snippet}</div>}
+          <div className="flex items-center gap-1 mt-2 text-xs text-primary-500">
+            <ExternalLink size={12} />
+            <span>打开</span>
+          </div>
+        </button>
+      </div>
+    );
+  };
 
   const renderAddResourceButton = (taskId: string) => (
     <div className="shrink-0 w-56">
-      {addingToTask === taskId ? (
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 border border-blue-200 dark:border-blue-800 space-y-2">
-          <input value={addForm.title} onChange={e => setAddForm({ ...addForm, title: e.target.value })}
-            placeholder="标题" className="w-full text-xs px-2 py-1 border rounded bg-white dark:bg-gray-700 dark:text-white" />
-          <input value={addForm.url} onChange={e => setAddForm({ ...addForm, url: e.target.value })}
-            placeholder="URL" className="w-full text-xs px-2 py-1 border rounded bg-white dark:bg-gray-700 dark:text-white" />
-          <input value={addForm.snippet} onChange={e => setAddForm({ ...addForm, snippet: e.target.value })}
-            placeholder="推荐理由" className="w-full text-xs px-2 py-1 border rounded bg-white dark:bg-gray-700 dark:text-white" />
-          <select value={addForm.resource_type} onChange={e => setAddForm({ ...addForm, resource_type: e.target.value })}
-            className="w-full text-xs px-2 py-1 border rounded bg-white dark:bg-gray-700 dark:text-white">
-            <option value="article">文章</option><option value="video">视频</option><option value="course">课程</option><option value="documentation">文档</option>
-          </select>
-          <div className="flex gap-2">
-            <button onClick={handleAddResource} className="flex-1 py-1 bg-primary-500 text-white rounded text-xs"><Plus size={12} className="inline mr-1" />添加</button>
-            <button onClick={() => { setAddingToTask(null); setAddForm({ title: '', url: '', snippet: '', resource_type: 'article' }); }} className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">取消</button>
-          </div>
-        </div>
-      ) : (
-        <button onClick={() => setAddingToTask(taskId)} className="w-full h-full min-h-[80px] flex items-center justify-center rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-500 transition-colors text-gray-400 hover:text-primary-500">
-          <Plus size={20} />
-        </button>
-      )}
+      <button
+        onClick={() => setResourceDrawer({ mode: 'add', taskId, resource: null })}
+        className="w-full h-full min-h-[80px] flex items-center justify-center rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-500 transition-colors text-gray-400 hover:text-primary-500"
+      >
+        <Plus size={20} />
+      </button>
     </div>
   );
 
@@ -319,11 +322,64 @@ export default function RoadmapDetailPage() {
                           </div>
                           {isExpanded && (
                             <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-4 space-y-4">
-                              <div className="markdown-content text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>{task.content}</ReactMarkdown></div>
-                              {task.code_example && <pre className="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto text-sm"><code>{task.code_example}</code></pre>}
-                              {task.exercise && <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl p-4"><div className="text-sm font-medium text-primary-700 dark:text-primary-300 mb-1">练习</div><div className="markdown-content text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>{task.exercise}</ReactMarkdown></div></div>}
+                              {task.content?.trim() ? (
+                                <>
+                                  <div className="markdown-content text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>{task.content}</ReactMarkdown></div>
+                                  {task.code_example && <pre className="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto text-sm"><code>{task.code_example}</code></pre>}
+                                  {task.exercise && <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl p-4"><div className="text-sm font-medium text-primary-700 dark:text-primary-300 mb-1">练习</div><div className="markdown-content text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>{task.exercise}</ReactMarkdown></div></div>}
+                                </>
+                              ) : (
+                                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 space-y-2">
+                                  <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-300 text-sm font-medium">
+                                    <AlertTriangle size={16} />
+                                    任务内容生成失败
+                                  </div>
+                                  <p className="text-xs text-yellow-700 dark:text-yellow-400">
+                                    AI 暂时无法为此任务生成详细内容。你可以基于任务标题自行补充,或在 AI 导师中提问。
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* v1.1 回路 ③:任务 → AI 提问 + 收藏 */}
+                              <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700/50">
+                                <button
+                                  onClick={() => setTutorTask(task)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+                                >
+                                  <MessageCircle size={14} />
+                                  基于此任务提问
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (isFavorited('task', task.id)) {
+                                      const f = favorites.find((x) => x.type === 'task' && x.ref_id === task.id);
+                                      if (f) await removeFavorite(f.id);
+                                    } else {
+                                      await addFavorite({
+                                        type: 'task',
+                                        ref_id: task.id,
+                                        roadmap_id: currentRoadmap?.id ?? null,
+                                        title: task.title,
+                                        preview: task.content.slice(0, 200),
+                                      });
+                                    }
+                                  }}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                                    isFavorited('task', task.id)
+                                      ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'
+                                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                  }`}
+                                >
+                                  <Star
+                                    size={14}
+                                    className={isFavorited('task', task.id) ? 'fill-amber-400 text-amber-500' : ''}
+                                  />
+                                  {isFavorited('task', task.id) ? '已收藏' : '收藏'}
+                                </button>
+                              </div>
+
                               <div>
-                                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">学习资源（可编辑）</div>
+                                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">学习资源(可编辑)</div>
                                 <div className="flex gap-3 overflow-x-auto pb-2">
                                   {task.resources.map(r => renderResourceCard(r))}
                                   {renderAddResourceButton(task.id)}
@@ -346,6 +402,27 @@ export default function RoadmapDetailPage() {
       )}
 
       <QuizModal stage={quizStage as Stage} isOpen={showQuizModal} onClose={() => { setShowQuizModal(false); setQuizStage(null); }} onSubmit={handleQuizSubmit} />
+
+      {/* v1.1 资源编辑 SideDrawer */}
+      {resourceDrawer && (
+        <ResourceDrawer
+          isOpen={!!resourceDrawer}
+          onClose={() => {
+            setResourceDrawer(null);
+            if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
+          }}
+          mode={resourceDrawer.mode}
+          taskId={resourceDrawer.taskId}
+          resource={resourceDrawer.resource}
+        />
+      )}
+
+      {/* v1.1 任务 → AI 提问 抽屉 */}
+      <TaskToTutorDrawer
+        isOpen={!!tutorTask}
+        onClose={() => setTutorTask(null)}
+        task={tutorTask}
+      />
     </div>
   );
 }
