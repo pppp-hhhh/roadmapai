@@ -30,6 +30,8 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 - **多 AI 提供商** — 支持 OpenAI、Claude、Gemini 及自定义兼容 API
 - **深色/浅色主题** — 护眼模式，一键切换
 - **本地数据存储** — SQLite 本地数据库，无需联网即可使用
+- **手稿视觉风格** — 全局采用「学者的手稿」设计语言(Fraunces / Newsreader / JetBrains Mono,墨黑 + 朱砂 + 米色 + 金箔,罗马章节号、印章、朱批、金箔分隔线)
+- **收藏夹直达内容** — 收藏的「任务 / 资源」点击后直接弹模态展示内容与资源链接,无需再展开路线
 
 ---
 
@@ -54,16 +56,25 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 ```
 ├── src/                        # React 前端
 │   ├── components/             # 可复用组件 (Layout, QuizModal)
+│   │   ├── manuscript/         # 品牌徽 / 罗马数字工具(手稿视觉原子)
+│   │   ├── states/             # Loading / Empty / Error / Skeleton 公共组件
+│   │   ├── wizard/             # 创建路线 wizard 步骤
+│   │   ├── ai-loop/            # 消息→任务/卡片/资源的抽屉
+│   │   ├── drawer/             # 通用 SideDrawer
+│   │   └── sidebar/            # 侧边栏 4 个子组件
 │   ├── pages/                  # 页面组件
 │   │   ├── HomePage.tsx        # 首页仪表盘
 │   │   ├── CreateRoadmapPage.tsx  # 创建路线
 │   │   ├── RoadmapDetailPage.tsx  # 路线详情与进度
 │   │   ├── FlashcardsPage.tsx  # 抽认卡复习
 │   │   ├── AiTutorPage.tsx     # AI 导师对话
+│   │   ├── FavoritesPage.tsx   # 收藏夹
+│   │   ├── StatsPage.tsx       # 学习统计
+│   │   ├── OnboardingPage.tsx  # 首次引导
 │   │   └── SettingsPage.tsx    # 设置 (API密钥/主题)
 │   ├── stores/                 # Zustand 状态管理
 │   ├── types.ts                # TypeScript 类型定义
-│   └── utils/                  # 工具函数
+│   └── utils/                  # 工具函数 (markdown 渲染 / 闪卡预览)
 ├── src-tauri/                  # Rust 后端
 │   ├── src/
 │   │   ├── commands/           # Tauri 命令 (20+)

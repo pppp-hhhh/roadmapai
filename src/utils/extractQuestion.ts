@@ -24,8 +24,11 @@ export function extractQuestion(content: string): string {
 export function extractPreview(content: string, max = 120): string {
   const plain = content
     .replace(/```[\s\S]*?```/g, '')
+    .replace(/\\n|\\t|\\r/g, ' ')        // 字面转义 → 空格
+    .replace(/\\([\\"])/g, '$1')         // 反斜杠转义 → 字符本身
     .replace(/[#*`>_~\-]/g, '')
     .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
   return plain.length > max ? `${plain.slice(0, max)}…` : plain;
 }

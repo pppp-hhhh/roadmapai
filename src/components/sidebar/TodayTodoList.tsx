@@ -7,26 +7,26 @@ interface TodoItemProps {
   icon: LucideIcon;
   count: number;
   label: string;
-  color: string;
+  glyph: string;
   onClick: () => void;
 }
 
-function TodoItem({ icon: Icon, count, label, color, onClick }: TodoItemProps) {
+function TodoItem({ icon: Icon, count, label, glyph, onClick }: TodoItemProps) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group"
+      className="w-full flex items-center gap-3 px-3 py-2.5
+        hover:bg-ink-100/50 dark:hover:bg-night-300/60
+        transition-colors group border-l-2 border-transparent
+        hover:border-seal-400"
     >
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${color}`}>
-        <Icon size={16} className="text-white" />
-      </div>
-      <div className="flex-1 text-left">
-        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-          {label}
-        </div>
-      </div>
+      <span className="font-mono text-[10px] text-ink-fade w-4 tabular-nums tracking-tight">{glyph}</span>
+      <Icon size={15} className="text-ink-500 dark:text-ink-200 flex-shrink-0 group-hover:text-seal-400 transition-colors" />
+      <span className="flex-1 text-left font-display text-[13px] text-ink-600 dark:text-ink-100 group-hover:text-ink-700 dark:group-hover:text-ink-50">
+        {label}
+      </span>
       {count > 0 && (
-        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 group-hover:bg-primary-200 dark:group-hover:bg-primary-900/60">
+        <span className="font-mono text-[11px] font-semibold text-seal-500 tabular-nums">
           {count > 99 ? '99+' : count}
         </span>
       )}
@@ -42,33 +42,28 @@ export default function TodayTodoList() {
 
   useEffect(() => {
     refreshTodayTodo();
-    // 30 秒轮询
-    const t = setInterval(() => {
-      refreshTodayTodo();
-    }, 30_000);
+    const t = setInterval(refreshTodayTodo, 30_000);
     return () => clearInterval(t);
   }, [refreshTodayTodo]);
 
   const total = todo.flashcards + todo.tasks + todo.updates;
 
   if (isCollapsed) return null;
-  if (total === 0 && !todo.flashcards) return null; // 全部为空时隐藏整段
+  if (total === 0 && !todo.flashcards) return null;
 
   return (
-    <div className="px-3 pb-3">
-      <div className="flex items-center gap-2 px-3 mb-2">
-        <Sparkles size={14} className="text-primary-500" />
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          今日待办
-        </span>
+    <div className="px-5 pb-4">
+      <div className="smallcaps mb-2 flex items-center justify-between">
+        <span>今 日 笔 记</span>
+        <span className="text-gilt-500">❦</span>
       </div>
-      <div className="space-y-1">
+      <div className="border-t border-ink-200/60 dark:border-ink-700/40">
         {todo.flashcards > 0 && (
           <TodoItem
             icon={Brain}
             count={todo.flashcards}
             label="待复习卡片"
-            color="bg-purple-500"
+            glyph="I"
             onClick={() => navigate('/flashcards')}
           />
         )}
@@ -76,8 +71,8 @@ export default function TodayTodoList() {
           <TodoItem
             icon={ListTodo}
             count={todo.tasks}
-            label="今日未完成"
-            color="bg-orange-500"
+            label="今日未竟"
+            glyph="II"
             onClick={() => navigate('/')}
           />
         )}
@@ -86,7 +81,7 @@ export default function TodayTodoList() {
             icon={Sparkles}
             count={todo.updates}
             label="路线更新"
-            color="bg-blue-500"
+            glyph="III"
             onClick={() => navigate('/')}
           />
         )}

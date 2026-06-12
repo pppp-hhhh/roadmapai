@@ -1,5 +1,5 @@
 import { useEffect, useState, type FC } from 'react';
-import { AlertCircle, Lightbulb } from 'lucide-react';
+import { AlertCircle, Lightbulb, ScrollText } from 'lucide-react';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { validateTopic } from '../../stores/useCreateRoadmapWizardStore';
 
@@ -10,61 +10,83 @@ const StepTopic: FC = () => {
   const { topic, setField } = useOnboardingStore();
   const [v, setV] = useState(validateTopic(topic));
 
-  useEffect(() => {
-    setV(validateTopic(topic));
-  }, [topic]);
+  useEffect(() => { setV(validateTopic(topic)); }, [topic]);
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h2 className="text-3xl font-bold text-white text-center mb-2">选择学习主题</h2>
-      <p className="text-white/70 text-center mb-8">我们将为这个主题生成你的第一条学习路线</p>
-
-      <input
-        type="text"
-        value={topic}
-        onChange={(e) => setField('topic', e.target.value)}
-        placeholder="例如:机器学习、Python 编程"
-        className="w-full px-4 py-3 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-white placeholder-white/40 outline-none focus:border-primary-400 mb-3"
-        autoFocus
-      />
-
-      {v.error && (
-        <p className="flex items-center gap-1.5 text-sm text-red-300 mb-3">
-          <AlertCircle size={14} />
-          {v.error}
+      <div className="text-center mb-10">
+        <div className="smallcaps mb-3">第 三 章 · 拟 题</div>
+        <h2 className="font-display text-[40px] font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-tight mb-2">
+          你 欲 研 何<span className="italic text-seal-500"> 术</span>
+        </h2>
+        <p className="font-display italic text-base text-ink-fade">
+          一句题,便是开篇的序言。
         </p>
-      )}
-      {v.warning && !v.error && (
-        <p className="flex items-center gap-1.5 text-sm text-amber-300 mb-3">
-          <Lightbulb size={14} />
-          {v.warning}
-        </p>
-      )}
+        <div className="rule-gilt mt-5 max-w-xs mx-auto" />
+      </div>
 
-      <div className="mt-4">
-        <p className="text-xs text-white/60 mb-2">热门主题:</p>
-        <div className="flex flex-wrap gap-2">
-          {EXAMPLES.map((ex) => (
-            <button
-              key={ex}
-              type="button"
-              onClick={() => setField('topic', ex)}
-              className="px-3 py-1.5 rounded-full text-xs bg-white/10 hover:bg-white/20 text-white border border-white/20"
-            >
-              {ex}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-white/40 mt-3">反例:</p>
-        <div className="flex flex-wrap gap-2 mt-1">
-          {COUNTER.map((ex) => (
-            <span
-              key={ex}
-              className="px-3 py-1.5 rounded-full text-xs bg-white/5 text-white/40 line-through"
-            >
-              {ex}
-            </span>
-          ))}
+      <div className="manuscript-card p-7">
+        <label className="smallcaps mb-3 flex items-center gap-2 text-[10px]">
+          <ScrollText size={11} />
+          <span>学 习 主 题</span>
+        </label>
+        <input
+          type="text"
+          value={topic}
+          onChange={(e) => setField('topic', e.target.value)}
+          placeholder="例:机器学习、Python 编程"
+          className="w-full px-4 py-3 bg-paper dark:bg-night-100
+            border-b-2 border-ink-300 dark:border-ink-600
+            focus:border-seal-400 outline-none
+            font-display text-lg text-ink-700 dark:text-ink-100
+            placeholder-ink-fade/50 transition-colors"
+          autoFocus
+        />
+
+        {v.error && (
+          <p className="flex items-center gap-1.5 text-sm text-seal-500 mt-3 font-display italic">
+            <AlertCircle size={13} />
+            {v.error}
+          </p>
+        )}
+        {v.warning && !v.error && (
+          <p className="flex items-center gap-1.5 text-sm text-gilt-500 mt-3 font-display italic">
+            <Lightbulb size={13} />
+            {v.warning}
+          </p>
+        )}
+
+        <div className="mt-6 pt-5 border-t border-dashed border-ink-200/60 dark:border-ink-700/40">
+          <p className="smallcaps mb-3 text-[9px]">例 题 · INSPIRATION</p>
+          <div className="flex flex-wrap gap-2">
+            {EXAMPLES.map((ex) => (
+              <button
+                key={ex}
+                type="button"
+                onClick={() => setField('topic', ex)}
+                className="px-3 py-1.5 font-display italic text-xs
+                  bg-ink-100/50 dark:bg-night-300/40 hover:bg-seal-50 dark:hover:bg-seal-700/15
+                  text-ink-600 dark:text-ink-200 hover:text-seal-500
+                  border border-ink-200 dark:border-ink-700/40 hover:border-seal-400/60
+                  transition-colors"
+              >
+                {ex}
+              </button>
+            ))}
+          </div>
+          <p className="smallcaps mb-2 mt-5 text-[9px]">— 须 避 —</p>
+          <div className="flex flex-wrap gap-2">
+            {COUNTER.map((ex) => (
+              <span
+                key={ex}
+                className="px-3 py-1.5 font-display italic text-xs
+                  bg-transparent text-ink-fade/60 line-through
+                  border border-dashed border-ink-200/60 dark:border-ink-700/30"
+              >
+                {ex}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </div>

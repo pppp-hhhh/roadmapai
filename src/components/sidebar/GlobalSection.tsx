@@ -13,105 +13,96 @@ export default function GlobalSection() {
   const hasApiKey = useSidebarStore((s) => s.hasApiKey);
 
   const [menuOpen, setMenuOpen] = useState(false);
-
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
   if (isCollapsed) {
     return (
-      <div className="px-2 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-col items-center gap-1">
-        <button
-          onClick={toggleCollapsed}
-          className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-          title="展开侧边栏"
-        >
-          <PanelLeftOpen size={18} />
+      <div className="px-2 py-3 mt-auto border-t border-ink-200/60 dark:border-ink-700/40 flex flex-col items-center gap-1">
+        <button onClick={toggleCollapsed}
+          className="p-2 text-ink-fade hover:text-seal-400 hover:bg-ink-100/50 dark:hover:bg-night-300/50 transition-colors"
+          title="展开侧边栏">
+          <PanelLeftOpen size={16} />
         </button>
-        <button
-          onClick={() => navigate('/settings')}
-          className={`p-2 rounded-lg ${
-            hasApiKey
-              ? 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-              : 'text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400'
-          }`}
-          title="设置"
-        >
-          <Settings size={18} />
+        <button onClick={() => navigate('/settings')}
+          className={`p-2 transition-colors ${hasApiKey
+            ? 'text-ink-fade hover:text-seal-400 hover:bg-ink-100/50 dark:hover:bg-night-300/50'
+            : 'text-seal-500 bg-seal-50 dark:bg-seal-700/20 animate-flame'}`}
+          title="设置">
+          <Settings size={16} />
         </button>
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-          title="切换主题"
-        >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        <button onClick={toggleTheme}
+          className="p-2 text-ink-fade hover:text-seal-400 hover:bg-ink-100/50 dark:hover:bg-night-300/50 transition-colors"
+          title="切换主题">
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
       </div>
     );
   }
 
   return (
-    <div className="px-3 py-3 border-t border-gray-200 dark:border-gray-700 space-y-1">
+    <div className="px-5 py-3 mt-auto border-t border-ink-200/60 dark:border-ink-700/40 space-y-0.5">
+      <div className="rule-gilt mb-3" />
+
       <button
         onClick={() => navigate('/settings')}
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-colors ${
-          hasApiKey
-            ? 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
-            : 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30'
-        }`}
+        className={`w-full flex items-center gap-3 px-2 py-2 transition-colors
+          ${hasApiKey
+            ? 'text-ink-500 dark:text-ink-200 hover:text-seal-500 hover:bg-ink-100/50 dark:hover:bg-night-300/50'
+            : 'text-seal-500 dark:text-seal-300 bg-seal-50/60 dark:bg-seal-700/15 hover:bg-seal-50 dark:hover:bg-seal-700/25'
+          }`}
         title={hasApiKey ? '设置' : '待配置 API Key'}
       >
-        {hasApiKey ? <Settings size={18} /> : <KeyRound size={18} />}
-        <span className="text-sm flex-1 text-left">设置</span>
+        {hasApiKey ? <Settings size={15} /> : <KeyRound size={15} />}
+        <span className="font-display text-[13px] flex-1 text-left">设置</span>
         {!hasApiKey && (
-          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200">
-            待配置
+          <span className="seal-stamp text-[9px] text-seal-500 border-seal-400">
+            待 配
           </span>
         )}
       </button>
 
       <button
         onClick={toggleTheme}
-        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
+        className="w-full flex items-center gap-3 px-2 py-2 text-ink-500 dark:text-ink-200
+          hover:text-seal-500 hover:bg-ink-100/50 dark:hover:bg-night-300/50 transition-colors"
       >
-        {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        <span className="text-sm flex-1 text-left">
-          {theme === 'dark' ? '浅色模式' : '深色模式'}
+        {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+        <span className="font-display text-[13px] flex-1 text-left">
+          {theme === 'dark' ? '夜读模式' : '日读模式'}
         </span>
       </button>
 
       <div className="relative">
         <button
           onClick={() => setMenuOpen((v) => !v)}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
+          className="w-full flex items-center gap-3 px-2 py-2 text-ink-500 dark:text-ink-200
+            hover:text-seal-500 hover:bg-ink-100/50 dark:hover:bg-night-300/50 transition-colors"
         >
-          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-white text-xs font-semibold">
-            U
-          </div>
-          <span className="text-sm flex-1 text-left">用户</span>
+          <span className="w-6 h-6 border border-ink-300 dark:border-ink-600 flex items-center justify-center
+            font-display text-[11px] font-semibold text-ink-600 dark:text-ink-100">
+            翁
+          </span>
+          <span className="font-display text-[13px] flex-1 text-left">读者</span>
         </button>
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-            <div className="absolute bottom-full left-0 right-0 mb-1 p-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-40">
+            <div className="absolute bottom-full left-0 right-0 mb-1 p-1 manuscript-card z-40">
               <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  // 占位：导出
-                  alert('导出功能即将推出');
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => { setMenuOpen(false); alert('导出功能即将推出'); }}
+                className="w-full flex items-center gap-2 px-3 py-2 font-display text-[13px] text-ink-600 dark:text-ink-200
+                  hover:bg-ink-100/60 dark:hover:bg-night-300/60"
               >
-                <Download size={14} />
-                导出本地数据
+                <Download size={13} />
+                抄本导出
               </button>
               <button
                 disabled
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-400 dark:text-gray-600 cursor-not-allowed"
+                className="w-full flex items-center gap-2 px-3 py-2 font-display text-[13px] text-ink-fade cursor-not-allowed"
               >
-                <LogOut size={14} />
-                退出登录
-                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700">
-                  即将
-                </span>
+                <LogOut size={13} />
+                罢 笔
+                <span className="ml-auto smallcaps text-[8px]">待启</span>
               </button>
             </div>
           </>
@@ -120,12 +111,13 @@ export default function GlobalSection() {
 
       <button
         onClick={toggleCollapsed}
-        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
+        className="w-full flex items-center gap-3 px-2 py-2 text-ink-fade
+          hover:text-seal-500 hover:bg-ink-100/50 dark:hover:bg-night-300/50 transition-colors"
         title="折叠侧边栏 (Ctrl/Cmd+B)"
       >
-        <PanelLeftClose size={18} />
-        <span className="text-sm flex-1 text-left">折叠</span>
-        <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">
+        <PanelLeftClose size={15} />
+        <span className="font-display text-[13px] flex-1 text-left">合 卷</span>
+        <kbd className="font-mono text-[9px] px-1.5 py-0.5 border border-ink-300/60 dark:border-ink-600/60 text-ink-fade">
           ⌘B
         </kbd>
       </button>

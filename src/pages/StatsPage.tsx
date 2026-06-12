@@ -31,8 +31,7 @@ export default function StatsPage() {
       try {
         const s = await invoke<Stats>('get_user_stats', {});
         setStats(s);
-      } catch (e) {
-        // 后端命令未实现:聚合已有数据
+      } catch {
         try {
           const roadmaps = await invoke<any[]>('get_all_roadmaps');
           const flashcards = await invoke<any[]>('get_due_flashcards').catch(() => []);
@@ -50,15 +49,19 @@ export default function StatsPage() {
 
   if (error && !stats) {
     return (
-      <div className="h-full overflow-y-auto p-6 md:p-8">
-        <div className="max-w-4xl mx-auto">
-          <header className="mb-6">
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <BarChart3 className="text-primary-600" /> 学习统计
+      <div className="h-full overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-12 py-10">
+          <header className="mb-8 animate-ink-spread">
+            <div className="smallcaps mb-3">第 六 章 · 检 卷</div>
+            <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
+              <span className="italic text-seal-500">学</span>习 统 计
             </h1>
+            <div className="rule-gilt mt-5 max-w-xs" />
           </header>
-          <div className="p-8 rounded-2xl bg-white dark:bg-gray-800 border text-center text-gray-500">
-            统计功能即将推出
+          <div className="manuscript-card p-12 text-center">
+            <div className="font-display italic text-base text-ink-fade dark:text-ink-soft">
+              统 计 功 能 即 将 推 出
+            </div>
           </div>
         </div>
       </div>
@@ -67,8 +70,13 @@ export default function StatsPage() {
 
   if (!stats) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400">
-        加载中…
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <div className="font-display italic text-ink-fade text-sm tracking-wider mb-3">墨 干 中</div>
+          <div className="w-32 h-px bg-ink-200 dark:bg-ink-700 mx-auto overflow-hidden">
+            <div className="h-full w-1/3 bg-seal-400 animate-flow" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -82,47 +90,24 @@ export default function StatsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto p-6 md:p-8">
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-3">
-            <BarChart3 className="text-primary-600" /> 学习统计
+      <div className="max-w-3xl mx-auto px-12 py-10">
+        <header className="mb-10 animate-ink-spread">
+          <div className="smallcaps mb-3">第 六 章 · 检 卷</div>
+          <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
+            <span className="italic text-seal-500">学</span>习 统 计
           </h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">汇总你的学习进度与产出。</p>
+          <p className="font-display italic text-base text-ink-fade dark:text-ink-soft mt-3">
+            汇 总 你 的 学 习 进 度 与 产 出。
+          </p>
+          <div className="rule-gilt mt-5 max-w-xs" />
         </header>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <StatCard
-            icon={ListTodo}
-            label="学习路线"
-            value={stats.total_roadmaps}
-            color="from-primary-500 to-blue-500"
-          />
-          <StatCard
-            icon={Clock}
-            label="任务完成率"
-            value={`${taskCompletion}%`}
-            sub={`${stats.completed_tasks} / ${stats.total_tasks}`}
-            color="from-green-500 to-emerald-500"
-          />
-          <StatCard
-            icon={Brain}
-            label="闪卡总数"
-            value={stats.total_flashcards}
-            sub={cardCompletion > 0 ? `已复习 ${cardCompletion}%` : undefined}
-            color="from-purple-500 to-pink-500"
-          />
-          <StatCard
-            icon={TrendingUp}
-            label="AI 对话"
-            value={stats.total_chat_messages}
-            color="from-orange-500 to-amber-500"
-          />
-          <StatCard
-            icon={BarChart3}
-            label="收藏数"
-            value={stats.total_favorites}
-            color="from-rose-500 to-red-500"
-          />
+          <StatCard icon={ListTodo}  roman="I"   label="学 习 路 线"   value={stats.total_roadmaps} />
+          <StatCard icon={Clock}     roman="II"  label="任 务 完 成 率" value={`${taskCompletion}%`} sub={`${stats.completed_tasks} / ${stats.total_tasks}`} />
+          <StatCard icon={Brain}     roman="III" label="闪 卡 总 数"   value={stats.total_flashcards} sub={cardCompletion > 0 ? `已 复 习 ${cardCompletion}%` : undefined} />
+          <StatCard icon={TrendingUp} roman="IV"  label="AI 对 话"      value={stats.total_chat_messages} />
+          <StatCard icon={BarChart3}  roman="V"   label="收 藏 数"      value={stats.total_favorites} />
         </div>
       </div>
     </div>
@@ -131,27 +116,36 @@ export default function StatsPage() {
 
 function StatCard({
   icon: Icon,
+  roman: romanNum,
   label,
   value,
   sub,
-  color,
 }: {
   icon: LucideIcon;
+  roman: string;
   label: string;
   value: number | string;
   sub?: string;
-  color: string;
 }) {
   return (
-    <div className="p-5 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-      <div
-        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center text-white mb-3`}
-      >
-        <Icon size={20} />
+    <div className="manuscript-card p-5 relative overflow-hidden">
+      {/* 罗马水印 */}
+      <span aria-hidden className="absolute top-2 right-3 font-display italic text-2xl
+        text-ink-200/60 dark:text-ink-700/60 select-none pointer-events-none">
+        {romanNum}
+      </span>
+
+      {/* 方形图标盒 */}
+      <div className="w-10 h-10 border-2 border-ink-300 dark:border-ink-600
+        bg-paper dark:bg-night-200 flex items-center justify-center text-seal-500 mb-4">
+        <Icon size={18} />
       </div>
-      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</div>
-      <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{label}</div>
-      {sub && <div className="text-xs text-gray-400 mt-1">{sub}</div>}
+
+      <div className="font-display text-3xl font-semibold text-ink-700 dark:text-ink-100 tabular-nums">
+        {value}
+      </div>
+      <div className="smallcaps mt-1.5">{label}</div>
+      {sub && <div className="font-mono text-[10px] text-ink-fade mt-1.5">{sub}</div>}
     </div>
   );
 }

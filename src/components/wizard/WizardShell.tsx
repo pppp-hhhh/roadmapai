@@ -12,16 +12,24 @@ const WizardShell: FC<WizardShellProps> = ({ title, subtitle, aiHint, children }
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{title}</h2>
-        {subtitle && <p className="text-gray-500 dark:text-gray-400">{subtitle}</p>}
+        <h2 className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-tight">
+          {title}
+        </h2>
+        {subtitle && (
+          <p className="font-display italic text-sm text-ink-fade dark:text-ink-soft mt-1.5 leading-relaxed">
+            {subtitle}
+          </p>
+        )}
       </header>
 
-      <div className="min-h-[200px]">{children}</div>
+      <div>{children}</div>
 
-      <div className="flex items-start gap-2 p-3 rounded-xl bg-gradient-to-r from-primary-50 to-purple-50 dark:from-primary-900/20 dark:to-purple-900/20 border border-primary-100 dark:border-primary-900/30">
-        <Sparkles size={16} className="text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
-        <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
-          <span className="font-semibold text-primary-700 dark:text-primary-300">AI 接下来会做什么:</span>
+      {/* AI 提示卡 — 朱砂批注条 */}
+      <div className="flex items-start gap-2.5 border-l-2 border-seal-400 pl-4 py-2.5
+        bg-seal-50/40 dark:bg-seal-700/10">
+        <Sparkles size={14} className="text-seal-500 flex-shrink-0 mt-0.5" />
+        <p className="font-display text-xs text-ink-600 dark:text-ink-200 leading-relaxed">
+          <span className="font-semibold text-seal-500">AI 接 下 来 会 做 什 么 · </span>
           {aiHint}
         </p>
       </div>
