@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Sparkles, Loader2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles, X } from 'lucide-react';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 import {
   useCreateRoadmapWizardStore,
@@ -13,111 +13,73 @@ import {
   StepGoalPreference,
 } from '../components/wizard';
 import { ErrorState } from '../components/states';
+import { roman } from '../components/manuscript/roman';
 
 export default function CreateRoadmapPage() {
   const navigate = useNavigate();
-  const { generateRoadmap, isGenerating, error, progress, reset: resetRoadmap } =
-    useRoadmapStore();
+  const { generateRoadmap, isGenerating, error, progress, reset: resetRoadmap } = useRoadmapStore();
   const wizard = useCreateRoadmapWizardStore();
   const {
-    currentStep,
-    topic,
-    level,
-    goal,
-    goalDetail,
-    weeklyHours,
-    difficulty,
-    includeProject,
-    nextStep,
-    prevStep,
-    gotoStep,
-    reset,
+    currentStep, topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject,
+    nextStep, prevStep, gotoStep, reset,
   } = wizard;
 
-  // 离开确认
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (topic.trim()) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
+      if (topic.trim()) { e.preventDefault(); e.returnValue = ''; }
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [topic]);
 
-  const canGo = canProceedFromStep(currentStep, {
-    topic,
-    level,
-    goal,
-    goalDetail,
-    weeklyHours,
-    difficulty,
-    includeProject,
-  });
+  const canGo = canProceedFromStep(currentStep, { topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject });
 
   const handleSubmit = async () => {
-    if (!canProceedFromStep(4, { topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject })) {
-      return;
-    }
+    if (!canProceedFromStep(4, { topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject })) return;
     try {
       const req = toRoadmapRequest({ topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject });
       const id = await generateRoadmap(req);
       reset();
       navigate(`/roadmap/${id}`);
-    } catch {
-      /* store handles error */
-    }
+    } catch { /* store handles error */ }
   };
 
-  const isOutlinePhase =
-    !progress ||
-    progress.type === 'started' ||
-    progress.type === 'outline_complete';
-
-  const progressPercent =
-    progress && progress.total > 0
-      ? Math.round((progress.current / progress.total) * 100)
-      : 0;
+  const isOutlinePhase = !progress || progress.type === 'started' || progress.type === 'outline_complete';
+  const progressPercent = progress && progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
 
   return (
     <div className="h-full overflow-auto">
-      <div className="max-w-2xl mx-auto p-6 md:p-8">
+      <div className="max-w-2xl mx-auto px-12 py-10">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-6"
+          className="flex items-center gap-2 font-display italic text-sm text-ink-fade hover:text-seal-500 mb-6 group transition-colors"
         >
-          <ArrowLeft size={20} />
-          <span>返回首页</span>
+          <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
+          <span>返 回 首 页</span>
         </button>
 
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">创建学习路线</h1>
-          <p className="text-gray-500 dark:text-gray-400">4 步引导,让 AI 更懂你</p>
-        </div>
+        <header className="mb-8 animate-ink-spread">
+          <div className="smallcaps mb-3">第 四 章 · 拟 纲</div>
+          <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
+            <span className="italic text-seal-500">创</span>建 学 习 路 线
+          </h1>
+          <p className="font-display italic text-base text-ink-fade dark:text-ink-soft mt-3">
+            4 步 引 导,让 AI 更 懂 你
+          </p>
+          <div className="rule-gilt mt-5 max-w-xs" />
+        </header>
 
         <WizardProgress currentStep={currentStep} onStepClick={gotoStep} />
 
         {error && (
-          <div className="mb-6">
-            <ErrorState
-              variant="card"
-              level="api"
-              error={error}
-              onRetry={() => {
-                resetRoadmap();
-                handleSubmit();
-              }}
-            />
+          <div className="my-6">
+            <ErrorState variant="card" level="api" error={error}
+              onRetry={() => { resetRoadmap(); handleSubmit(); }} />
           </div>
         )}
 
-        <div className="p-6 md:p-8 rounded-3xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-          {currentStep <= 2 ? (
-            <StepTopicLevel step={currentStep as 1 | 2} />
-          ) : (
-            <StepGoalPreference step={currentStep as 3 | 4} />
-          )}
+        <div className="manuscript-card p-7 mt-6">
+          {currentStep <= 2 ? <StepTopicLevel step={currentStep as 1 | 2} /> : <StepGoalPreference step={currentStep as 3 | 4} />}
         </div>
 
         {/* 操作栏 */}
@@ -126,10 +88,12 @@ export default function CreateRoadmapPage() {
             type="button"
             onClick={prevStep}
             disabled={currentStep === 1}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 font-display text-sm
+              text-ink-fade hover:text-seal-500 hover:bg-ink-100/50 dark:hover:bg-night-300/50
+              disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            <ArrowLeft size={18} />
-            上一步
+            <ArrowLeft size={16} />
+            <span>上 一 步</span>
           </button>
 
           {currentStep < 4 ? (
@@ -137,96 +101,87 @@ export default function CreateRoadmapPage() {
               type="button"
               onClick={nextStep}
               disabled={!canGo}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white font-medium transition-colors"
+              className="flex items-center gap-2 px-6 py-2.5
+                bg-ink-700 dark:bg-seal-500 hover:bg-seal-500 dark:hover:bg-seal-400
+                text-ink-50 transition-colors font-display text-sm
+                border-2 border-ink-800 dark:border-seal-600
+                disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              继续
-              <ArrowRight size={18} />
+              <span>继 续</span>
+              <ArrowRight size={16} />
             </button>
           ) : (
             <button
               type="button"
               onClick={handleSubmit}
               disabled={!canGo || isGenerating}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-purple-600 hover:from-primary-700 hover:to-purple-700 disabled:opacity-50 text-white font-medium transition-colors"
+              className="flex items-center gap-2 px-6 py-2.5
+                bg-seal-500 hover:bg-seal-400 text-ink-50
+                transition-colors font-display text-sm border-2 border-seal-600
+                disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Sparkles size={18} />
-              生成学习路线
+              <Sparkles size={16} />
+              <span>落 笔 · 拟 写 纲 要</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* 进度弹窗 - 保留 v1.0 视觉 */}
+      {/* 进度弹窗 */}
       {isGenerating && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-3xl max-w-lg w-full p-8 shadow-2xl border border-white/20 dark:border-gray-700/50 relative">
+        <div className="fixed inset-0 bg-ink-900/50 dark:bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="manuscript-card max-w-lg w-full p-8 relative">
             <button
               onClick={() => navigate('/')}
-              className="absolute top-4 right-4 p-2 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="absolute top-4 right-4 p-1.5 text-ink-fade hover:text-seal-500 transition-colors"
             >
               <X size={18} />
             </button>
 
-            <div className="flex items-center justify-center gap-1 mb-8">
+            <div className="smallcaps mb-3 text-center">— AI 落 墨 中 —</div>
+            <h3 className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 text-center mb-6 tracking-tight">
+              {roman(1)} — {roman(4)} 章 生 成
+            </h3>
+
+            {/* 4 阶段进度 — 罗马章号 */}
+            <div className="flex items-center justify-center gap-2 mb-8">
               {[
-                { id: 1, label: '大纲', icon: '🧠' },
-                { id: 2, label: '骨架', icon: '📋' },
-                { id: 3, label: '内容', icon: '📝' },
-                { id: 4, label: '完成', icon: '✅' },
+                { id: 1, label: '大 纲',     icon: '✦' },
+                { id: 2, label: '骨 架',     icon: '§' },
+                { id: 3, label: '内 容',     icon: '✎' },
+                { id: 4, label: '完 成',     icon: '✦' },
               ].map((step) => {
                 const isActive =
                   (step.id === 1 && (!progress || progress.type === 'started' || progress.type === 'outline_complete')) ||
                   (step.id === 2 && (progress?.type === 'stage_started' || progress?.type === 'stage_completed')) ||
-                  (step.id === 3 && (progress?.type === 'stage_completed' && progress.current > 0)) ||
+                  (step.id === 3 && (progress?.type === 'stage_completed' && (progress.current ?? 0) > 0)) ||
                   (step.id === 4 && progress?.type === 'completed');
                 const isDone =
-                  step.id <
-                  (progress?.type === 'completed'
-                    ? 5
-                    : progress?.type === 'stage_completed'
-                      ? 3
-                      : progress?.type === 'outline_complete'
-                        ? 2
-                        : 1);
+                  step.id < (progress?.type === 'completed' ? 5
+                    : progress?.type === 'stage_completed' ? 3
+                    : progress?.type === 'outline_complete' ? 2 : 1);
                 return (
-                  <div key={step.id} className="flex items-center gap-1">
-                    <div
-                      className={`flex flex-col items-center gap-1 transition-all duration-700 ${
-                        isActive ? 'scale-110' : isDone ? 'opacity-50 scale-95' : 'opacity-25 scale-90'
-                      }`}
+                  <div key={step.id} className="flex items-center gap-2">
+                    <div className={`flex flex-col items-center gap-1 transition-all duration-700
+                      ${isActive ? 'scale-110' : isDone ? 'opacity-50 scale-95' : 'opacity-30 scale-90'}`}
                     >
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-sm transition-all duration-500 ${
-                          isActive
-                            ? 'bg-primary-500 text-white shadow-primary-500/30 ring-4 ring-primary-100 dark:ring-primary-900/50'
-                            : isDone
-                              ? 'bg-green-100 dark:bg-green-900/30'
-                              : 'bg-gray-100 dark:bg-gray-700'
-                        }`}
-                      >
-                        {isDone ? '✓' : step.icon}
+                      <div className={`w-11 h-11 flex items-center justify-center font-display italic text-lg border-2
+                        ${isActive
+                          ? 'border-seal-400 bg-seal-50 dark:bg-seal-700/20 text-seal-500'
+                          : isDone
+                            ? 'border-gilt-500 bg-gilt-500/10 text-gilt-500'
+                            : 'border-ink-300 dark:border-ink-600 text-ink-fade'
+                        }`}>
+                        {isDone ? '✓' : roman(step.id)}
                       </div>
-                      <span
-                        className={`text-[10px] font-medium transition-colors duration-500 ${
-                          isActive
-                            ? 'text-primary-600 dark:text-primary-400'
-                            : isDone
-                              ? 'text-green-500'
-                              : 'text-gray-400'
-                        }`}
-                      >
+                      <span className={`font-display text-[10px] tracking-wider
+                        ${isActive ? 'text-seal-500' : isDone ? 'text-gilt-500' : 'text-ink-fade/60'}`}>
                         {step.label}
                       </span>
                     </div>
                     {step.id < 4 && (
-                      <div
-                        className={`w-6 h-0.5 rounded-full mb-4 transition-all duration-700 ${
-                          isDone
-                            ? 'bg-green-400'
-                            : isActive && step.id < 4
-                              ? 'bg-primary-300 animate-pulse'
-                              : 'bg-gray-200 dark:bg-gray-700'
-                        }`}
+                      <div className={`w-6 h-px mb-4 transition-all duration-700
+                        ${isDone ? 'bg-gilt-500' : isActive && step.id < 4 ? 'bg-seal-400 animate-pulse' : 'bg-ink-200 dark:bg-ink-700'}`}
                       />
                     )}
                   </div>
@@ -234,57 +189,45 @@ export default function CreateRoadmapPage() {
               })}
             </div>
 
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 text-xs font-medium mb-3">
-                <Loader2 size={12} className="animate-spin" />
-                {!progress || progress.type === 'started'
-                  ? 'Layer 1: 大纲生成'
-                  : progress.type === 'outline_complete'
-                    ? 'Layer 2: 阶段架构'
-                    : progress.type === 'stage_started' || progress.type === 'stage_completed'
-                      ? 'Layer 3: 任务内容'
-                      : progress.type === 'completed'
-                        ? '写入数据库'
-                        : '处理中'}
+            <div className="border-l-2 border-seal-400 pl-4 py-2 bg-seal-50/40 dark:bg-seal-700/10 mb-4">
+              <div className="smallcaps text-seal-500 mb-1.5 text-[9px]">
+                {!progress || progress.type === 'started' ? '第 一 阶 段'
+                  : progress.type === 'outline_complete' ? '第 二 阶 段'
+                  : progress.type === 'stage_started' || progress.type === 'stage_completed' ? '第 三 阶 段'
+                  : progress.type === 'completed' ? '写 入 完 毕' : '处 理 中'}
               </div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+              <h4 className="font-display text-base font-semibold text-ink-700 dark:text-ink-100 mb-1">
                 {!progress || progress.type === 'started'
-                  ? 'AI 正在规划学习路径'
+                  ? 'AI 正 在 规 划 学 习 路 径'
                   : progress.type === 'outline_complete'
-                    ? '大纲生成完毕,正在细化'
-                    : '正在并行生成任务内容'}
-              </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+                    ? '大 纲 已 毕,正 在 细 化'
+                    : '正 在 并 行 生 成 任 务 内 容'}
+              </h4>
+              <p className="font-display italic text-xs text-ink-fade leading-relaxed">
                 {!progress || progress.type === 'started'
-                  ? '分析主题、评估难度、设计阶段划分…'
+                  ? '分 析 主 题 · 评 估 难 度 · 设 计 阶 段 划 分'
                   : progress.type === 'outline_complete'
-                    ? `已规划 ${progress.total} 个阶段,正在为每个阶段生成任务列表…`
+                    ? `已 规 划 ${progress.total} 个 阶 段,正 在 为 每 个 阶 段 生 成 任 务 列 表`
                     : progress.stage_title
-                      ? `当前阶段:${progress.stage_title}`
-                      : 'AI 正在为每个任务编写详细内容、推荐资源和生成记忆卡片…'}
+                      ? `当 前 阶 段 · ${progress.stage_title}`
+                      : 'AI 正 在 为 每 个 任 务 编 写 详 细 内 容、推 荐 资 源 和 生 成 记 忆 卡 片'}
               </p>
             </div>
 
             {!isOutlinePhase && progress && progress.total > 0 && (
               <div className="space-y-3">
                 <div className="relative">
-                  <div className="w-full bg-gray-100 dark:bg-gray-700/50 rounded-full h-4 overflow-hidden shadow-inner">
-                    <div
-                      className="h-full rounded-full transition-all duration-1000 ease-out relative overflow-hidden bg-gradient-to-r from-blue-400 via-primary-500 to-purple-500"
-                      style={{ width: `${Math.max(progressPercent, 4)}%` }}
-                    />
+                  <div className="w-full h-1 bg-ink-200 dark:bg-ink-700 overflow-hidden">
+                    <div className="h-full bg-seal-400 transition-all duration-1000 ease-out"
+                      style={{ width: `${Math.max(progressPercent, 4)}%` }} />
                   </div>
-                  <div
-                    className="absolute -top-3 right-0 bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg"
-                    style={{ transform: `translateX(-${100 - progressPercent}%)` }}
-                  >
+                  <div className="absolute -top-3 right-0 bg-seal-500 text-ink-50 text-[10px] font-bold px-2 py-0.5 font-mono"
+                    style={{ transform: `translateX(-${100 - progressPercent}%)` }}>
                     {progressPercent}%
                   </div>
                 </div>
-                <div className="flex justify-between text-xs text-gray-400">
-                  <span>
-                    {progress.current}/{progress.total} 阶段
-                  </span>
+                <div className="flex justify-between font-mono text-[10px] text-ink-fade">
+                  <span>{progress.current}/{progress.total} 阶 段</span>
                 </div>
               </div>
             )}
@@ -292,11 +235,8 @@ export default function CreateRoadmapPage() {
             {isOutlinePhase && (
               <div className="flex justify-center gap-2 mt-2">
                 {[0, 1, 2].map((i) => (
-                  <div
-                    key={i}
-                    className="w-2 h-2 rounded-full bg-primary-400 animate-bounce"
-                    style={{ animationDelay: `${i * 0.2}s`, animationDuration: '1s' }}
-                  />
+                  <div key={i} className="w-1.5 h-1.5 bg-seal-400 rounded-full animate-bounce"
+                    style={{ animationDelay: `${i * 0.2}s`, animationDuration: '1s' }} />
                 ))}
               </div>
             )}
@@ -304,9 +244,10 @@ export default function CreateRoadmapPage() {
             <div className="mt-6 text-center">
               <button
                 onClick={() => navigate('/')}
-                className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                className="font-display italic text-xs text-ink-fade hover:text-seal-500 transition-colors
+                  border-b border-dotted border-ink-fade/40 hover:border-seal-500"
               >
-                取消生成 · 返回首页后可稍后查看已生成部分
+                取 消 生 成 · 返 回 首 页
               </button>
             </div>
           </div>

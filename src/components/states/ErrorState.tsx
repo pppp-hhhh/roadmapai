@@ -15,36 +15,35 @@ interface ErrorStateProps extends StateProps {
   error?: unknown;
   isRetrying?: boolean;
   onRetry?: () => void;
-  /** 折叠错误详情 */
   showDetails?: boolean;
   icon?: ReactNode;
 }
 
 const LEVEL_DEFAULT_TITLE: Record<ErrorLevel, string> = {
-  network: '网络连接已断开',
-  api: 'AI 服务调用失败',
-  auth: '身份验证失败',
-  notfound: '没有找到对应内容',
-  unknown: '出现了一些问题',
+  network: '网 络 连 接 已 断',
+  api: 'AI 服 务 调 用 失 败',
+  auth: '身 份 验 证 失 败',
+  notfound: '未 找 到 对 应 内 容',
+  unknown: '出 现 了 一 些 问 题',
 };
 
 const LEVEL_DEFAULT_DESC: Record<ErrorLevel, string> = {
-  network: '请检查网络连接后重试。',
-  api: '请检查 API Key 与配置，或稍后重试。',
-  auth: '请前往设置重新配置 API Key。',
-  notfound: '该内容可能已被删除或链接失效。',
-  unknown: '请稍后重试或前往设置检查配置。',
+  network: '请 检 查 网 络 连 接 后 重 试。',
+  api: '请 检 查 API Key 与 配 置,或 稍 后 重 试。',
+  auth: '请 前 往 设 置 重 新 配 置 API Key。',
+  notfound: '该 内 容 可 能 已 被 删 除 或 链 接 失 效。',
+  unknown: '请 稍 后 重 试 或 前 往 设 置 检 查 配 置。',
 };
 
 const LEVEL_DEFAULT_ACTIONS: Record<ErrorLevel, { label: string; variant: 'primary' | 'secondary' | 'ghost'; disabled?: boolean }[]> = {
-  network: [{ label: '重试', variant: 'primary' }],
+  network: [{ label: '重 试', variant: 'primary' }],
   api: [
-    { label: '去设置', variant: 'primary' },
-    { label: '重试', variant: 'secondary' },
+    { label: '去 设 置', variant: 'primary' },
+    { label: '重 试',     variant: 'secondary' },
   ],
-  auth: [{ label: '去设置', variant: 'primary' }],
-  notfound: [{ label: '返回首页', variant: 'primary' }],
-  unknown: [{ label: '重试', variant: 'primary' }],
+  auth: [{ label: '去 设 置', variant: 'primary' }],
+  notfound: [{ label: '返 回 首 页', variant: 'primary' }],
+  unknown: [{ label: '重 试', variant: 'primary' }],
 };
 
 const LEVEL_ILLUSTRATION: Record<ErrorLevel, ReactNode> = {
@@ -82,48 +81,41 @@ const ErrorState: FC<ErrorStateProps> = ({
       variant: a.variant,
       disabled: a.disabled,
       onClick: () => {
-        if (a.label === '去设置') {
-          window.location.assign('/settings');
-        } else if (a.label === '返回首页') {
-          window.location.assign('/');
-        } else if (onRetry) {
-          onRetry();
-        }
+        if (a.label === '去 设 置' || a.label === '去设置') window.location.assign('/settings');
+        else if (a.label === '返 回 首 页' || a.label === '返回首页') window.location.assign('/');
+        else if (onRetry) onRetry();
       },
     }));
 
   return (
-    <div
-      role="alert"
-      className={`${STATE_VARIANT_CLASS[variant]} text-center ${className}`}
-    >
+    <div role="alert" className={`${STATE_VARIANT_CLASS[variant]} text-center ${className}`}>
       {finalIllus && <div className="flex justify-center mb-6">{finalIllus}</div>}
 
-      <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+      <h3 className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 mb-2 tracking-tight">
         {finalTitle}
       </h3>
-      <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+      <p className="font-display italic text-sm text-ink-fade dark:text-ink-soft mb-6 max-w-md mx-auto leading-relaxed">
         {finalDesc}
       </p>
 
       {finalActions.length > 0 && (
         <div className="flex flex-wrap gap-3 justify-center">
           {finalActions.map((action, idx) => {
-            const variantClass =
-              action.variant === 'secondary'
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                : action.variant === 'ghost'
-                  ? 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  : 'bg-primary-600 hover:bg-primary-700 text-white shadow-sm';
-            const isRetryAction = action.label === '重试';
+            const isPrimary = action.variant === 'primary' || !action.variant;
+            const isRetryAction = action.label.includes('重 试') || action.label.includes('重试');
+            const variantClass = isPrimary
+              ? 'bg-seal-500 hover:bg-seal-400 text-ink-50 border-2 border-seal-600'
+              : action.variant === 'ghost'
+                ? 'text-ink-fade hover:text-seal-500 hover:bg-ink-100/50 dark:hover:bg-night-300/50 border-2 border-transparent'
+                : 'border border-ink-300 dark:border-ink-600 hover:border-seal-400 hover:text-seal-500 text-ink-600 dark:text-ink-200 bg-transparent';
             return (
               <button
                 key={idx}
                 onClick={action.onClick}
                 disabled={action.disabled || (isRetryAction && isRetrying)}
-                className={`px-5 py-2.5 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${variantClass}`}
+                className={`px-5 py-2.5 font-display text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${variantClass}`}
               >
-                {isRetryAction && isRetrying ? '重试中…' : action.label}
+                {isRetryAction && isRetrying ? '重 试 中 …' : action.label}
               </button>
             );
           })}
@@ -134,12 +126,13 @@ const ErrorState: FC<ErrorStateProps> = ({
         <div className="mt-6 text-left">
           <button
             onClick={() => setDetailsOpen((v) => !v)}
-            className="text-xs text-gray-500 dark:text-gray-400 hover:underline"
+            className="font-display italic text-xs text-ink-fade hover:text-seal-500 transition-colors
+              border-b border-dotted border-ink-fade/40 hover:border-seal-500"
           >
-            {detailsOpen ? '收起' : '查看'}技术详情
+            {detailsOpen ? '收 起' : '查 看'}技 术 详 情
           </button>
           {detailsOpen && (
-            <pre className="mt-2 p-3 rounded-lg bg-gray-100 dark:bg-gray-900 text-xs text-gray-700 dark:text-gray-300 overflow-auto max-h-40">
+            <pre className="mt-2 p-3 bg-ink-700 text-ink-100 text-xs font-mono overflow-auto max-h-40 border-l-2 border-gilt-500">
               {errorText}
             </pre>
           )}

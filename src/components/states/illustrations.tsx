@@ -8,7 +8,7 @@ const baseProps: SVGProps<SVGSVGElement> = {
   strokeWidth: 4,
   strokeLinecap: 'round',
   strokeLinejoin: 'round',
-  className: 'w-40 h-40 text-gray-300 dark:text-gray-600',
+  className: 'w-40 h-40 text-ink-300 dark:text-ink-700',
 };
 
 const BookIllustration: FC = () => (

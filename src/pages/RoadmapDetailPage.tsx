@@ -1,30 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, CheckCircle2, Circle, ExternalLink, BookOpen,
-  Video, Code, FileText, HelpCircle, X, Lock, Play,
+  ArrowLeft, CheckCircle2, Circle, ExternalLink,
+  HelpCircle, X, Play,
   ChevronDown, ChevronRight, AlertTriangle, Plus, MessageCircle, Star,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
-import { lowlight } from '../utils/markdown';
+import { lowlight, sanitizeMarkdown } from '../utils/markdown';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 import QuizModal from '../components/QuizModal';
 import { openExternalLink } from '../utils/links';
 import type { Stage, Resource, Task } from '../types';
 import { TaskToTutorDrawer, ResourceDrawer } from '../components/ai-loop';
 import { useFavoriteStore } from '../stores/useFavoriteStore';
+import { roman } from '../components/manuscript/roman';
 
-const taskTypeIcons: Record<string, typeof BookOpen> = {
-  reading: BookOpen, video: Video, exercise: Code, project: FileText, quiz: HelpCircle,
-};
-const taskTypeColors: Record<string, string> = {
-  reading: 'text-blue-500 bg-blue-100 dark:bg-blue-900/30',
-  video: 'text-purple-500 bg-purple-100 dark:bg-purple-900/30',
-  exercise: 'text-green-500 bg-green-100 dark:bg-green-900/30',
-  project: 'text-orange-500 bg-orange-100 dark:bg-orange-900/30',
-  quiz: 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30',
+const taskTypeGlyph: Record<string, string> = {
+  reading: '§', video: '▶', exercise: '✎', project: '✦', quiz: '?',
 };
 
 export default function RoadmapDetailPage() {
@@ -37,15 +31,11 @@ export default function RoadmapDetailPage() {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [quizStage, setQuizStage] = useState<Stage | null>(null);
   const [showQuizModal, setShowQuizModal] = useState(false);
-
-  // 资源编辑改用 SideDrawer (v1.1 A-4)
   const [resourceDrawer, setResourceDrawer] = useState<{
     mode: 'add' | 'edit';
     taskId: string;
     resource: Resource | null;
   } | null>(null);
-
-  // 任务 → AI 提问 (v1.1 A-3)
   const [tutorTask, setTutorTask] = useState<Task | null>(null);
 
   useEffect(() => { if (id) fetchRoadmap(id); }, [id, fetchRoadmap]);
@@ -94,15 +84,30 @@ export default function RoadmapDetailPage() {
     return stage.tasks.length > 0 && getCompletedTaskCount(stage) === stage.tasks.length;
   };
 
+  const overview = useMemo(() => {
+    if (!currentRoadmap) return { total: 0, done: 0, pct: 0, chapters: 0 };
+    let total = 0, done = 0;
+    currentRoadmap.stages.forEach(s => {
+      if (s.stageType !== 'quiz') s.tasks.forEach(t => { total++; if (t.is_completed) done++; });
+    });
+    return {
+      total, done,
+      pct: total > 0 ? Math.round((done / total) * 100) : 0,
+      chapters: currentRoadmap.stages.length,
+    };
+  }, [currentRoadmap]);
+
   const renderResourceCard = (r: Resource) => {
     const favorited = isFavorited('resource', r.id);
     return (
-      <div key={r.id} className="shrink-0 w-56 bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-100 dark:border-gray-700 group relative">
-        <div className="flex items-center justify-between mb-1">
-          <div className="text-xs text-primary-500 font-medium">
-            {r.resource_type === 'video' ? '视频' : r.resource_type === 'course' ? '课程' : r.resource_type === 'article' ? '文章' : '文档'}
+      <div key={r.id} className="shrink-0 w-60 manuscript-card p-3 group relative bg-ink-50/70 dark:bg-night-200/60">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="smallcaps text-[8px]">
+            {r.resource_type === 'video' ? '影 · 視頻' :
+             r.resource_type === 'course' ? '課 · 課程' :
+             r.resource_type === 'article' ? '文 · 文章' : '典 · 文檔'}
           </div>
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -119,30 +124,24 @@ export default function RoadmapDetailPage() {
                   });
                 }
               }}
-              className="p-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded"
+              className="p-0.5 hover:bg-gilt-500/20 text-ink-fade hover:text-gilt-500"
               title={favorited ? '取消收藏' : '收藏'}
             >
-              <Star
-                size={12}
-                className={favorited ? 'fill-amber-400 text-amber-500' : 'text-gray-400'}
-              />
+              <Star size={11} className={favorited ? 'fill-gilt-500 text-gilt-500' : ''} />
             </button>
             <button
               onClick={(evt) => {
                 evt.stopPropagation();
                 setResourceDrawer({ mode: 'edit', taskId: '', resource: r });
               }}
-              className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-500"
+              className="p-0.5 hover:bg-ink-200 dark:hover:bg-ink-700 text-ink-fade"
               title="编辑"
             >
-              <Plus size={12} className="rotate-45" />
+              <Plus size={11} className="rotate-45" />
             </button>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteResource(r.id);
-              }}
-              className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500"
+              onClick={(e) => { e.stopPropagation(); handleDeleteResource(r.id); }}
+              className="p-0.5 hover:bg-seal-50 text-ink-fade hover:text-seal-500"
               title="删除"
             >
               ×
@@ -150,13 +149,13 @@ export default function RoadmapDetailPage() {
           </div>
         </div>
         <button onClick={() => openExternalLink(r.url)} className="w-full text-left">
-          <div className="text-sm font-medium text-gray-900 dark:text-white mb-1 line-clamp-2 hover:text-primary-600 dark:hover:text-primary-400">
+          <div className="font-display text-[13px] font-semibold text-ink-700 dark:text-ink-100 mb-1 line-clamp-2 hover:text-seal-500 transition-colors leading-snug">
             {r.title}
           </div>
-          {r.snippet && <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">{r.snippet}</div>}
-          <div className="flex items-center gap-1 mt-2 text-xs text-primary-500">
-            <ExternalLink size={12} />
-            <span>打开</span>
+          {r.snippet && <div className="font-display italic text-[11px] text-ink-fade line-clamp-1">{r.snippet}</div>}
+          <div className="flex items-center gap-1 mt-2 font-mono text-[9px] smallcaps text-seal-500">
+            <ExternalLink size={10} />
+            <span>展 卷</span>
           </div>
         </button>
       </div>
@@ -164,124 +163,266 @@ export default function RoadmapDetailPage() {
   };
 
   const renderAddResourceButton = (taskId: string) => (
-    <div className="shrink-0 w-56">
+    <div className="shrink-0 w-60">
       <button
         onClick={() => setResourceDrawer({ mode: 'add', taskId, resource: null })}
-        className="w-full h-full min-h-[80px] flex items-center justify-center rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-500 transition-colors text-gray-400 hover:text-primary-500"
+        className="w-full h-full min-h-[88px] flex flex-col items-center justify-center gap-1
+          border border-dashed border-ink-300 dark:border-ink-700/60
+          hover:border-seal-400 transition-colors text-ink-fade hover:text-seal-500"
       >
-        <Plus size={20} />
+        <Plus size={18} />
+        <span className="smallcaps text-[8px]">添 资 料</span>
       </button>
     </div>
   );
 
   if (isLoading || !currentRoadmap) {
-    return <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div></div>;
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <div className="font-display italic text-ink-fade text-sm tracking-wider mb-3">墨 干 中</div>
+          <div className="w-32 h-px bg-ink-200 dark:bg-ink-700 mx-auto overflow-hidden">
+            <div className="h-full w-1/3 bg-seal-400 animate-flow" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  let totalTasks = 0, completedTasks = 0;
-  currentRoadmap.stages.forEach(stage => {
-    if (stage.stageType !== 'quiz') stage.tasks.forEach(task => { totalTasks++; if (task.is_completed) completedTasks++; });
-  });
-  const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-  const radius = 45, circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (progress / 100) * circumference;
+  const radius = 46, circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (overview.pct / 100) * circumference;
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="px-8 py-4">
-          <button onClick={() => navigate('/')} className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-4"><ArrowLeft size={20} /><span>返回首页</span></button>
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{currentRoadmap.title}</h1>
-              <p className="text-gray-500 dark:text-gray-400">{currentRoadmap.description}</p>
-            </div>
-            <div className="relative w-28 h-28 ml-6">
-              <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="none" className="text-gray-200 dark:text-gray-700" />
-                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="none" strokeLinecap="round" className="text-primary-500" style={{ strokeDasharray: circumference, strokeDashoffset }} />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(progress)}%</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">完成度</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* ====== 头部 ====== */}
+      <header className="flex-shrink-0 relative">
+        <div className="px-12 pt-7 pb-5 border-b border-ink-200 dark:border-ink-700/40
+          bg-gradient-to-b from-ink-50 to-transparent dark:from-night-100 dark:to-transparent">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-2 text-ink-fade hover:text-seal-500 mb-4
+              font-display italic text-sm transition-colors group"
+          >
+            <ArrowLeft size={15} className="transition-transform group-hover:-translate-x-1" />
+            <span>返 · 目录</span>
+          </button>
 
-      <div className="flex-1 overflow-auto p-8">
-        <div className="max-w-3xl mx-auto">
-          <div className="relative">
-            <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700" />
-            {currentRoadmap.stages.map((stage, index) => (
-              <div key={stage.id} className="relative pl-16 pb-8 last:pb-0">
-                <button onClick={() => handleStageClick(stage)} disabled={stage.isLocked}
-                  className={`absolute left-0 w-12 h-12 rounded-full flex items-center justify-center transition-all z-10 ${
-                    stage.isLocked ? 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed' :
-                    stage.isFallback ? 'bg-red-100 dark:bg-red-900/50 cursor-pointer hover:bg-red-200 dark:hover:bg-red-900/70 hover:scale-110' :
-                    stage.stageType === 'quiz' ? 'bg-yellow-100 dark:bg-yellow-900/50 cursor-pointer hover:bg-yellow-200 hover:scale-110' :
-                    'bg-primary-100 dark:bg-primary-900/50 cursor-pointer hover:bg-primary-200 hover:scale-110'
-                  }`}>
-                  {stage.isLocked ? <Lock size={20} className="text-gray-400" /> :
-                   stage.isFallback ? <AlertTriangle size={20} className="text-red-500" /> :
-                   stage.stageType === 'quiz' ? <HelpCircle size={20} className="text-yellow-500" /> :
-                   <span className="text-primary-600 dark:text-primary-300 font-bold">{index + 1}</span>}
-                </button>
-                <button onClick={() => handleStageClick(stage)} disabled={stage.isLocked}
-                  className={`w-full text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer ${
-                    stage.isLocked ? 'bg-gray-50 dark:bg-gray-800/30 border-gray-200 dark:border-gray-700 opacity-50 cursor-not-allowed' :
-                    stage.isFallback ? 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950/50 hover:border-red-400 hover:shadow-lg' :
-                    'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60 hover:border-primary-400 hover:shadow-lg'
-                  }`}>
-                  <div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">第{stage.order}关</span>
-                    {stage.isFallback ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-red-500 text-white font-medium flex items-center gap-1">
-                        <AlertTriangle size={12} />AI 未生成 — 点击查看详情
-                      </span>
-                    ) : (
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${stage.stageType === 'quiz' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600' : stage.stageType === 'project' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'}`}>
-                        {stage.stageType === 'learning' ? '学习' : stage.stageType === 'quiz' ? '测验' : '项目'}</span>
-                    )}
-                  </div><span className="text-sm text-gray-400">{stage.estimated_hours} 小时</span></div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{stage.name}</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">{stage.objective}</p>
-                  {(stage.stageType === 'learning' || stage.stageType === 'project') && stage.tasks.length > 0 && (
-                    <div className="mt-3"><div className="flex justify-between text-xs text-gray-400 mb-1"><span>{getCompletedTaskCount(stage)}/{stage.tasks.length} 任务</span><span>{getStageProgress(stage)}%</span></div>
-                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden"><div className="h-full bg-primary-500 rounded-full" style={{ width: `${getStageProgress(stage)}%` }} /></div></div>
-                  )}
-                </button>
+          <div className="flex items-start justify-between gap-8">
+            <div className="flex-1 min-w-0 animate-ink-spread">
+              <div className="smallcaps mb-2 flex items-center gap-3">
+                <span>在 读 册</span>
+                <span className="text-gilt-500">✦</span>
+                <span className="font-mono normal-case tracking-normal text-ink-fade text-[10px]">
+                  {currentRoadmap.stages.length} 章
+                </span>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
+              <h1 className="font-display text-[42px] leading-[1.05] font-semibold text-ink-700 dark:text-ink-100 tracking-tight mb-3">
+                {currentRoadmap.title}
+              </h1>
+              <p className="font-display italic text-base text-ink-fade dark:text-ink-soft max-w-2xl leading-relaxed">
+                {currentRoadmap.description}
+              </p>
+            </div>
 
-      {showStageModal && selectedStage && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 px-4">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowStageModal(false)} />
-          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-auto z-10">
-            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm text-gray-500">第{selectedStage.order}关</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${selectedStage.stageType === 'quiz' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600' : selectedStage.stageType === 'project' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'}`}>
-                    {selectedStage.stageType === 'learning' ? '学习' : selectedStage.stageType === 'quiz' ? '测验' : '项目'}</span>
-                  <span className="text-sm text-gray-400">{selectedStage.estimated_hours} 小时</span>
+            <div className="flex items-center gap-6 flex-shrink-0 animate-ink-spread" style={{ animationDelay: '120ms' }}>
+              <div className="flex flex-col items-center">
+                <div className="relative w-28 h-28">
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--rule)" strokeWidth="1.5" />
+                    <circle cx="50" cy="50" r={radius}
+                      fill="none" stroke="var(--seal)" strokeWidth="2" strokeLinecap="round"
+                      style={{ strokeDasharray: circumference, strokeDashoffset, transition: 'stroke-dashoffset 0.8s' }}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="font-display text-3xl font-semibold text-seal-500 tabular-nums">
+                      {overview.pct}<tspan fontSize="14" className="text-ink-fade">%</tspan>
+                    </span>
+                    <span className="smallcaps text-[8px] mt-0.5">已 通 关</span>
+                  </div>
                 </div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedStage.name}</h2>
               </div>
-              <button onClick={() => setShowStageModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><X size={20} className="text-gray-500" /></button>
+              <div className="space-y-3 border-l border-ink-200 dark:border-ink-700/40 pl-6">
+                {[
+                  { l: '章',    v: overview.chapters },
+                  { l: '节',    v: overview.total },
+                  { l: '已竟',  v: overview.done },
+                ].map((m) => (
+                  <div key={m.l} className="flex items-baseline gap-3">
+                    <span className="smallcaps w-10 text-[9px]">{m.l}</span>
+                    <span className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 tabular-nums">
+                      {m.v}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="p-6 space-y-6">
+          </div>
+          <div className="rule-gilt mt-5 max-w-3xl" />
+        </div>
+      </header>
+
+      {/* ====== 章回目录 ====== */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-[860px] mx-auto px-12 py-10">
+          <div className="smallcaps mb-6 flex items-center gap-3">
+            <span>章 回</span>
+            <span className="font-display normal-case tracking-normal text-ink-fade italic text-xs">— Chapters —</span>
+          </div>
+
+          <div className="relative">
+            <div className="ink-thread absolute left-[19px] top-2 bottom-2" aria-hidden />
+
+            <div className="space-y-7">
+              {currentRoadmap.stages.map((stage) => {
+                const stageProgress = getStageProgress(stage);
+                const isComplete = stageProgress === 100 && stage.tasks.length > 0;
+                const stageTasks = stage.tasks.length;
+
+                return (
+                  <article key={stage.id} className="relative pl-14">
+                    <button
+                      onClick={() => handleStageClick(stage)}
+                      disabled={stage.isLocked}
+                      aria-label={stage.name}
+                      className={`absolute left-0 top-1.5 w-10 h-10 flex items-center justify-center transition-all z-10
+                        ${stage.isLocked ? 'cursor-not-allowed' : 'cursor-pointer hover:scale-110'}`}
+                    >
+                      {stage.isLocked ? (
+                        <div className="wax-seal" aria-hidden />
+                      ) : stage.isFallback ? (
+                        <div className="w-9 h-9 border-2 border-dashed border-seal-400 bg-seal-50 dark:bg-seal-700/20 flex items-center justify-center">
+                          <AlertTriangle size={16} className="text-seal-500" />
+                        </div>
+                      ) : stage.stageType === 'quiz' ? (
+                        <div className="w-9 h-9 rounded-full bg-gilt-500/15 border border-gilt-500 flex items-center justify-center text-gilt-500">
+                          <HelpCircle size={17} />
+                        </div>
+                      ) : isComplete ? (
+                        <div className="w-9 h-9 rounded-full border-2 border-gilt-500 bg-gilt-500/10 flex items-center justify-center">
+                          <CheckCircle2 size={17} className="text-gilt-500" />
+                        </div>
+                      ) : (
+                        <div className="w-9 h-9 rounded-full border-2 border-seal-400 bg-paper flex items-center justify-center">
+                          <span className="font-display italic text-base text-seal-500 font-semibold">
+                            {roman(stage.order)}
+                          </span>
+                        </div>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => handleStageClick(stage)}
+                      disabled={stage.isLocked}
+                      className={`w-full text-left transition-all duration-300
+                        ${stage.isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer group'}`}
+                    >
+                      <div className="flex items-baseline gap-3 mb-2">
+                        <span className="smallcaps">第 {roman(stage.order)} 章</span>
+                        <span className="text-gilt-500">·</span>
+                        {stage.isFallback ? (
+                          <span className="font-display italic text-xs text-seal-500">待补</span>
+                        ) : (
+                          <span className={`font-mono text-[10px] tracking-wider
+                            ${stage.stageType === 'quiz' ? 'text-gilt-500' :
+                              stage.stageType === 'project' ? 'text-seal-500' : 'text-ink-fade'}`}>
+                            {stage.stageType === 'learning' ? 'LEARNING' :
+                             stage.stageType === 'quiz' ? 'QUIZ' : 'PROJECT'}
+                          </span>
+                        )}
+                        <span className="ml-auto font-mono text-[10px] text-ink-fade tabular-nums">
+                          {stage.estimated_hours}h · {stageTasks} 节
+                        </span>
+                      </div>
+
+                      <h2 className={`font-display text-[26px] font-semibold leading-tight tracking-tight mb-2 transition-colors
+                        ${stage.isLocked ? 'text-ink-fade' :
+                          isComplete ? 'text-gilt-500' :
+                          'text-ink-700 dark:text-ink-100 group-hover:text-seal-500'}`}>
+                        {stage.name}
+                      </h2>
+                      <p className="font-display italic text-[15px] text-ink-fade dark:text-ink-soft leading-relaxed line-clamp-2 max-w-2xl">
+                        {stage.objective}
+                      </p>
+
+                      {stageTasks > 0 && !stage.isLocked && stage.stageType !== 'quiz' && (
+                        <div className="mt-3 flex items-center gap-3 max-w-md">
+                          <div className="flex-1 h-px bg-ink-200 dark:bg-ink-700/50 relative">
+                            <div
+                              className={`absolute inset-y-0 left-0 transition-all duration-500
+                                ${isComplete ? 'bg-gilt-500' : 'bg-seal-400'}`}
+                              style={{ width: `${stageProgress}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[10px] text-ink-fade tabular-nums w-12 text-right">
+                            {stageProgress}%
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="relative pl-14 mt-10">
+              <div className="absolute left-0 top-1.5 w-10 h-10 flex items-center justify-center text-gilt-500">
+                <div className="font-display text-xl">❦</div>
+              </div>
+              <p className="font-display italic text-ink-fade text-sm">— 终 · 完卷之日,方见月明 —</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ====== 章节详情 Modal ====== */}
+      {showStageModal && selectedStage && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-10 px-4">
+          <div
+            className="fixed inset-0 bg-ink-900/40 dark:bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowStageModal(false)}
+          />
+          <div className="relative manuscript-card w-full max-w-3xl max-h-[88vh] overflow-auto z-10 animate-ink-spread">
+            <div className="sticky top-0 z-10 bg-ink-50/95 dark:bg-night-100/95 backdrop-blur
+              border-b border-ink-200 dark:border-ink-700/40 px-8 py-5">
+              <div className="flex items-baseline gap-3 mb-2">
+                <span className="smallcaps">第 {roman(selectedStage.order)} 章</span>
+                <span className="text-gilt-500">·</span>
+                <span className={`font-mono text-[10px] tracking-wider
+                  ${selectedStage.stageType === 'quiz' ? 'text-gilt-500' :
+                    selectedStage.stageType === 'project' ? 'text-seal-500' : 'text-ink-fade'}`}>
+                  {selectedStage.stageType === 'learning' ? 'LEARNING' :
+                   selectedStage.stageType === 'quiz' ? 'QUIZ' : 'PROJECT'}
+                </span>
+                <span className="ml-auto font-mono text-[10px] text-ink-fade">
+                  {selectedStage.estimated_hours}h
+                </span>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <h2 className="font-display text-3xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-tight">
+                  {selectedStage.name}
+                </h2>
+                <button
+                  onClick={() => setShowStageModal(false)}
+                  className="p-1.5 text-ink-fade hover:text-seal-500 transition-colors flex-shrink-0"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-8 space-y-7">
               {selectedStage.isFallback && (
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 space-y-3">
+                <div className="border-l-3 border-seal-400 pl-4 py-3 bg-seal-50/40 dark:bg-seal-700/10">
                   <div className="flex items-start gap-3">
-                    <AlertTriangle size={20} className="text-yellow-600 shrink-0 mt-0.5" />
+                    <AlertTriangle size={18} className="text-seal-500 shrink-0 mt-0.5" />
                     <div>
-                      <div className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-1">AI 暂时无法生成此阶段的详细内容</div>
-                      <div className="text-xs text-yellow-700 dark:text-yellow-400">已使用占位内容。你可以重新生成此阶段，或参考下方学习建议自行补充。</div>
+                      <div className="font-display italic text-sm font-semibold text-seal-500 mb-1">
+                        AI 暂 未 着 墨
+                      </div>
+                      <div className="font-display text-xs text-ink-fade leading-relaxed">
+                        此章尚为占位,墨痕未干。你可以重新生成,或依下述目标自补笔记。
+                      </div>
                     </div>
                   </div>
                   <button
@@ -289,65 +430,137 @@ export default function RoadmapDetailPage() {
                       await retryStage(selectedStage.id);
                       if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
                     }}
-                    className="w-full py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    className="mt-3 ml-7 px-4 py-1.5 bg-seal-500 hover:bg-seal-400 text-ink-50
+                      font-display text-xs flex items-center gap-2 transition-colors"
                   >
-                    <Play size={14} />重新生成此阶段
+                    <Play size={12} />重 研 此 章
                   </button>
                 </div>
               )}
-              <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">阶段目标</h3>
-                <p className="text-gray-600 dark:text-gray-400">{selectedStage.objective}</p>
+
+              <div>
+                <div className="smallcaps mb-2">章 旨</div>
+                <p className="font-display text-[15px] text-ink-700 dark:text-ink-100 leading-relaxed">
+                  {selectedStage.objective}
+                </p>
                 {(selectedStage.stageType === 'learning' || selectedStage.stageType === 'project') && selectedStage.tasks.length > 0 && (
-                  <div className="mt-4"><div className="flex justify-between text-xs text-gray-400 mb-1"><span>{getCompletedTaskCount(selectedStage)}/{selectedStage.tasks.length} 任务</span><span>{getStageProgress(selectedStage)}%</span></div>
-                  <div className="h-2.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden"><div className="h-full bg-primary-500 rounded-full" style={{ width: `${getStageProgress(selectedStage)}%` }} /></div></div>
+                  <div className="mt-4 flex items-center gap-3">
+                    <div className="flex-1 h-px bg-ink-200 dark:bg-ink-700/50 relative">
+                      <div className="absolute inset-y-0 left-0 bg-seal-400 transition-all duration-500"
+                        style={{ width: `${getStageProgress(selectedStage)}%` }} />
+                    </div>
+                    <span className="font-mono text-[10px] text-ink-fade tabular-nums w-20 text-right">
+                      {getCompletedTaskCount(selectedStage)}/{selectedStage.tasks.length} · {getStageProgress(selectedStage)}%
+                    </span>
+                  </div>
                 )}
               </div>
+
               {selectedStage.tasks.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">学习任务 ({selectedStage.tasks.length})</h3>
-                  <div className="space-y-3">
-                    {selectedStage.tasks.map(task => {
-                      const Icon = taskTypeIcons[task.task_type] || BookOpen;
+                <section>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="smallcaps">本 章 节 录</div>
+                    <span className="font-mono text-[10px] text-ink-fade">
+                      {selectedStage.tasks.length} entries
+                    </span>
+                    <div className="flex-1 h-px bg-ink-200/60 dark:bg-ink-700/40" />
+                  </div>
+
+                  <div className="space-y-2">
+                    {selectedStage.tasks.map((task, ti) => {
                       const isExpanded = expandedTasks.has(task.id);
                       return (
-                        <div key={task.id} className="bg-gray-50 dark:bg-gray-700/30 rounded-xl overflow-hidden">
-                          <div className="p-4 flex items-center gap-3">
-                            <button onClick={() => handleTaskToggle(task.id, !task.is_completed)} className="shrink-0">
-                              {task.is_completed ? <CheckCircle2 size={20} className="text-green-500" /> : <Circle size={20} className="text-gray-400" />}
+                        <div key={task.id}
+                          className={`border transition-colors
+                            ${task.is_completed
+                              ? 'border-gilt-500/30 bg-gilt-500/5'
+                              : 'border-ink-200 dark:border-ink-700/40 hover:border-seal-400/60'
+                            }`}>
+                          <div className="px-4 py-3 flex items-center gap-3">
+                            <span className="font-display italic text-xs text-ink-fade w-6 tabular-nums">
+                              {String(ti + 1).padStart(2, '0')}.
+                            </span>
+                            <button
+                              onClick={() => handleTaskToggle(task.id, !task.is_completed)}
+                              className="shrink-0 transition-transform hover:scale-110"
+                            >
+                              {task.is_completed
+                                ? <CheckCircle2 size={19} className="text-gilt-500" />
+                                : <Circle size={19} className="text-ink-fade hover:text-seal-400" />}
                             </button>
-                            <button onClick={() => toggleExpandTask(task.id)} className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${taskTypeColors[task.task_type]}`}><Icon size={16} /></button>
-                            <button onClick={() => toggleExpandTask(task.id)} className="flex-1 text-left"><div className={`text-sm font-medium ${task.is_completed ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}>{task.title}</div></button>
-                            <button onClick={() => toggleExpandTask(task.id)} className="p-1 text-gray-400">{isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button>
+                            <span className={`font-mono text-xs w-5 text-center
+                              ${task.is_completed ? 'text-gilt-500' : 'text-seal-400'}`}>
+                              {taskTypeGlyph[task.task_type] || '·'}
+                            </span>
+                            <button
+                              onClick={() => toggleExpandTask(task.id)}
+                              className="flex-1 text-left"
+                            >
+                              <div className={`font-display text-[15px] font-medium tracking-tight
+                                ${task.is_completed ? 'text-ink-fade line-through decoration-gilt-500/50' : 'text-ink-700 dark:text-ink-100'}`}>
+                                {task.title}
+                              </div>
+                            </button>
+                            <button
+                              onClick={() => toggleExpandTask(task.id)}
+                              className="p-1 text-ink-fade hover:text-seal-500 transition-colors"
+                            >
+                              {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                            </button>
                           </div>
+
                           {isExpanded && (
-                            <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-4 space-y-4">
+                            <div className="border-t border-ink-200/60 dark:border-ink-700/30 px-6 py-5 space-y-5 bg-ink-50/30 dark:bg-night-200/30">
                               {task.content?.trim() ? (
                                 <>
-                                  <div className="markdown-content text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>{task.content}</ReactMarkdown></div>
-                                  {task.code_example && <pre className="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto text-sm"><code>{task.code_example}</code></pre>}
-                                  {task.exercise && <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl p-4"><div className="text-sm font-medium text-primary-700 dark:text-primary-300 mb-1">练习</div><div className="markdown-content text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>{task.exercise}</ReactMarkdown></div></div>}
+                                  <div className="markdown-content text-sm">
+                                    <ReactMarkdown
+                                      remarkPlugins={[remarkGfm]}
+                                      rehypePlugins={[[rehypeHighlight, { lowlight }]]}
+                                    >
+                                      {sanitizeMarkdown(task.content)}
+                                    </ReactMarkdown>
+                                  </div>
+                                  {task.code_example && (
+                                    <pre className="bg-ink-700 text-ink-100 p-4 overflow-x-auto text-sm font-mono
+                                      border-l-2 border-gilt-500">
+                                      <code>{task.code_example}</code>
+                                    </pre>
+                                  )}
+                                  {task.exercise && (
+                                    <div className="border border-seal-400/40 bg-seal-50/40 dark:bg-seal-700/10 p-4">
+                                      <div className="smallcaps text-seal-500 mb-2">习 · EXERCISE</div>
+                                      <div className="markdown-content text-sm">
+                                        <ReactMarkdown
+                                          remarkPlugins={[remarkGfm]}
+                                          rehypePlugins={[[rehypeHighlight, { lowlight }]]}
+                                        >
+                                          {sanitizeMarkdown(task.exercise)}
+                                        </ReactMarkdown>
+                                      </div>
+                                    </div>
+                                  )}
                                 </>
                               ) : (
-                                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 space-y-2">
-                                  <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-300 text-sm font-medium">
-                                    <AlertTriangle size={16} />
-                                    任务内容生成失败
+                                <div className="border-l-2 border-seal-400 pl-4 py-2">
+                                  <div className="flex items-center gap-2 text-seal-500 font-display italic text-sm font-semibold mb-1">
+                                    <AlertTriangle size={14} />
+                                    墨痕未干
                                   </div>
-                                  <p className="text-xs text-yellow-700 dark:text-yellow-400">
-                                    AI 暂时无法为此任务生成详细内容。你可以基于任务标题自行补充,或在 AI 导师中提问。
+                                  <p className="font-display italic text-xs text-ink-fade leading-relaxed">
+                                    AI 暂未为此节着墨。可循题自补,或于 AI 导师处求教。
                                   </p>
                                 </div>
                               )}
 
-                              {/* v1.1 回路 ③:任务 → AI 提问 + 收藏 */}
-                              <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700/50">
+                              <div className="flex items-center gap-1 pt-3 border-t border-ink-200/60 dark:border-ink-700/30">
                                 <button
                                   onClick={() => setTutorTask(task)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+                                  className="flex items-center gap-1.5 px-2.5 py-1.5 font-display text-xs
+                                    text-seal-500 hover:bg-seal-50 dark:hover:bg-seal-700/15 transition-colors"
                                 >
-                                  <MessageCircle size={14} />
-                                  基于此任务提问
+                                  <MessageCircle size={13} />
+                                  就 此 节 质 疑
                                 </button>
                                 <button
                                   onClick={async () => {
@@ -364,24 +577,24 @@ export default function RoadmapDetailPage() {
                                       });
                                     }
                                   }}
-                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                                    isFavorited('task', task.id)
-                                      ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'
-                                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                  }`}
+                                  className={`flex items-center gap-1.5 px-2.5 py-1.5 font-display text-xs transition-colors
+                                    ${isFavorited('task', task.id)
+                                      ? 'text-gilt-500 bg-gilt-500/10'
+                                      : 'text-ink-fade hover:bg-ink-100 dark:hover:bg-night-300/50'
+                                    }`}
                                 >
                                   <Star
-                                    size={14}
-                                    className={isFavorited('task', task.id) ? 'fill-amber-400 text-amber-500' : ''}
+                                    size={13}
+                                    className={isFavorited('task', task.id) ? 'fill-gilt-500' : ''}
                                   />
-                                  {isFavorited('task', task.id) ? '已收藏' : '收藏'}
+                                  {isFavorited('task', task.id) ? '已 收 录' : '收 录'}
                                 </button>
                               </div>
 
                               <div>
-                                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">学习资源(可编辑)</div>
-                                <div className="flex gap-3 overflow-x-auto pb-2">
-                                  {task.resources.map(r => renderResourceCard(r))}
+                                <div className="smallcaps mb-2.5 text-[9px]">参 考 资 料 · RESOURCES</div>
+                                <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                                  {task.resources.map(renderResourceCard)}
                                   {renderAddResourceButton(task.id)}
                                 </div>
                               </div>
@@ -391,10 +604,19 @@ export default function RoadmapDetailPage() {
                       );
                     })}
                   </div>
-                </div>
+                </section>
               )}
+
               {canTakeQuiz(selectedStage) && (
-                <button onClick={() => handleStartQuiz(selectedStage)} className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"><Play size={16} />参加过关测验</button>
+                <button
+                  onClick={() => handleStartQuiz(selectedStage)}
+                  className="w-full py-3.5 bg-gilt-500 hover:bg-gilt-600 text-ink-50
+                    font-display text-sm flex items-center justify-center gap-2 transition-colors
+                    border-2 border-gilt-600"
+                >
+                  <Play size={15} />
+                  <span>参 加 攻 关 测 验</span>
+                </button>
               )}
             </div>
           </div>
@@ -403,7 +625,6 @@ export default function RoadmapDetailPage() {
 
       <QuizModal stage={quizStage as Stage} isOpen={showQuizModal} onClose={() => { setShowQuizModal(false); setQuizStage(null); }} onSubmit={handleQuizSubmit} />
 
-      {/* v1.1 资源编辑 SideDrawer */}
       {resourceDrawer && (
         <ResourceDrawer
           isOpen={!!resourceDrawer}
@@ -417,7 +638,6 @@ export default function RoadmapDetailPage() {
         />
       )}
 
-      {/* v1.1 任务 → AI 提问 抽屉 */}
       <TaskToTutorDrawer
         isOpen={!!tutorTask}
         onClose={() => setTutorTask(null)}

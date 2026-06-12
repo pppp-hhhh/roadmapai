@@ -8,12 +8,12 @@ interface BaseProps {
 export const Box: FC<BaseProps & { width?: string | number; height?: string | number; rounded?: string }> = ({
   width = '100%',
   height = '1rem',
-  rounded = 'rounded',
+  rounded = '',
   className = '',
   style,
 }) => (
   <div
-    className={`bg-gray-200 dark:bg-gray-700 animate-pulse ${rounded} ${className}`}
+    className={`bg-ink-200 dark:bg-ink-700 animate-pulse ${rounded} ${className}`}
     style={{ width, height, ...style }}
   />
 );
@@ -24,8 +24,8 @@ export const Circle: FC<BaseProps & { size?: string | number }> = ({
   style,
 }) => (
   <div
-    className={`bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse flex-shrink-0 ${className}`}
-    style={{ width: size, height: size, ...style }}
+    className={`bg-ink-200 dark:bg-ink-700 animate-pulse flex-shrink-0 ${className}`}
+    style={{ width: size, height: size, borderRadius: '50%', ...style }}
   />
 );
 
@@ -37,29 +37,19 @@ export const Text: FC<BaseProps & { lines?: number; lastWidth?: string }> = ({
 }) => (
   <div className={`space-y-2 ${className}`} style={style}>
     {Array.from({ length: lines }, (_, i) => (
-      <Box
-        key={i}
-        height="0.75rem"
-        width={i === lines - 1 ? lastWidth : '100%'}
-      />
+      <Box key={i} height="0.75rem" width={i === lines - 1 ? lastWidth : '100%'} />
     ))}
   </div>
 );
 
 export const Card: FC<BaseProps & { children?: ReactNode }> = ({ children, className = '', style }) => (
-  <div
-    className={`p-4 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 ${className}`}
-    style={style}
-  >
+  <div className={`p-4 manuscript-card ${className}`} style={style}>
     {children}
   </div>
 );
 
 export const Stack: FC<BaseProps & { children?: ReactNode; gap?: number }> = ({
-  children,
-  gap = 12,
-  className = '',
-  style,
+  children, gap = 12, className = '', style,
 }) => (
   <div className={className} style={{ display: 'flex', flexDirection: 'column', gap, ...style }}>
     {children}
@@ -67,12 +57,9 @@ export const Stack: FC<BaseProps & { children?: ReactNode; gap?: number }> = ({
 );
 
 export const List: FC<BaseProps & { count: number; children?: (i: number) => ReactNode }> = ({
-  count,
-  children,
-  className = '',
-  style,
+  count, children, className = '',
 }) => (
-  <div className={`space-y-3 ${className}`} style={style}>
+  <div className={`space-y-3 ${className}`}>
     {Array.from({ length: count }, (_, i) => (
       <div key={i}>{children?.(i)}</div>
     ))}
@@ -93,7 +80,7 @@ export const RoadmapCardSkeleton: FC<SkeletonPresetProps> = ({ count = 1, classN
           <div className="flex-1">
             <Box width="60%" height="1.25rem" className="mb-3" />
             <Text lines={2} lastWidth="80%" />
-            <Box width="40%" height="0.5rem" className="mt-3" rounded="rounded-full" />
+            <Box width="40%" height="0.5rem" className="mt-3" />
           </div>
         </div>
       </Card>
@@ -123,7 +110,7 @@ export const ChatMessageSkeleton: FC<{ count?: number }> = ({ count = 2 }) => (
         <Circle size="2.25rem" />
         <div className="flex-1 max-w-md">
           <Box width="30%" height="0.75rem" className="mb-2" />
-          <Box width="100%" height="3rem" rounded="rounded-2xl" />
+          <Box width="100%" height="3rem" />
         </div>
       </div>
     )}

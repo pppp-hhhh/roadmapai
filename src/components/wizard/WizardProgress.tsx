@@ -1,12 +1,13 @@
 import type { FC } from 'react';
 import { Check } from 'lucide-react';
 import type { WizardStep } from '../../stores/useCreateRoadmapWizardStore';
+import { roman } from '../manuscript/roman';
 
-const STEPS: { id: WizardStep; label: string }[] = [
-  { id: 1, label: '主题' },
-  { id: 2, label: '水平' },
-  { id: 3, label: '目标' },
-  { id: 4, label: '偏好' },
+const STEPS: { id: WizardStep; label: string; subtitle: string }[] = [
+  { id: 1, label: '主 题', subtitle: 'Topic'    },
+  { id: 2, label: '水 平', subtitle: 'Level'    },
+  { id: 3, label: '目 标', subtitle: 'Goal'     },
+  { id: 4, label: '偏 好', subtitle: 'Pace'     },
 ];
 
 interface WizardProgressProps {
@@ -17,7 +18,7 @@ interface WizardProgressProps {
 const WizardProgress: FC<WizardProgressProps> = ({ currentStep, onStepClick }) => {
   return (
     <div className="mb-8">
-      <div className="flex items-center justify-between max-w-md mx-auto">
+      <div className="flex items-center justify-between max-w-2xl mx-auto">
         {STEPS.map((step, idx) => {
           const isDone = currentStep > step.id;
           const isActive = currentStep === step.id;
@@ -30,36 +31,35 @@ const WizardProgress: FC<WizardProgressProps> = ({ currentStep, onStepClick }) =
                 className="flex flex-col items-center gap-2 group"
               >
                 <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center font-semibold transition-all ${
-                    isDone
-                      ? 'bg-primary-600 text-white'
+                  className={`w-11 h-11 flex items-center justify-center transition-all duration-500
+                    ${isDone
+                      ? 'border-2 border-seal-500 bg-seal-50 dark:bg-seal-700/15 text-seal-500'
                       : isActive
-                        ? 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 ring-4 ring-primary-200/50 dark:ring-primary-900/30'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
-                  }`}
+                        ? 'border-2 border-seal-400 bg-paper dark:bg-night-200 text-seal-500'
+                        : 'border border-ink-300 dark:border-ink-600 text-ink-fade bg-paper/40 dark:bg-night-200/40'
+                    }`}
+                  style={{ transform: isActive ? 'rotate(-2deg) scale(1.05)' : isDone ? 'rotate(1deg)' : 'none' }}
                 >
-                  {isDone ? <Check size={16} /> : step.id}
+                  {isDone
+                    ? <Check size={16} strokeWidth={2.5} />
+                    : <span className="font-display italic text-lg font-semibold">{roman(step.id)}</span>
+                  }
                 </div>
-                <span
-                  className={`text-xs ${
-                    isActive
-                      ? 'text-primary-700 dark:text-primary-300 font-medium'
-                      : isDone
-                        ? 'text-gray-600 dark:text-gray-400'
-                        : 'text-gray-400'
-                  }`}
-                >
-                  {step.label}
-                </span>
+                <div className="text-center">
+                  <div className={`font-display text-sm font-medium tracking-wider
+                    ${isActive ? 'text-seal-500' : isDone ? 'text-ink-700 dark:text-ink-100' : 'text-ink-fade'}`}>
+                    {step.label}
+                  </div>
+                  <div className="font-mono text-[8px] tracking-widest text-ink-fade/60 uppercase mt-0.5">
+                    {step.subtitle}
+                  </div>
+                </div>
               </button>
               {idx < STEPS.length - 1 && (
-                <div className="flex-1 h-0.5 mx-2 mb-5 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                <div className="flex-1 h-px mx-2 mb-5 relative bg-ink-200 dark:bg-ink-700">
                   <div
-                    className={`h-full transition-all duration-300 ${
-                      currentStep > step.id
-                        ? 'bg-primary-600 w-full'
-                        : 'w-0'
-                    }`}
+                    className={`absolute inset-y-0 left-0 transition-all duration-500
+                      ${isDone ? 'bg-seal-400 w-full' : 'w-0'}`}
                   />
                 </div>
               )}
