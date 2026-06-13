@@ -107,7 +107,7 @@ export default function SettingsPage() {
         {/* ====== 顶部 — 卷首 ====== */}
         <header className="mb-10 flex items-start justify-between animate-ink-spread">
           <div>
-            <div className="smallcaps mb-3">第 五 章 · 置 砚</div>
+            <div className="smallcaps mb-3">第 八 章 · 置 砚</div>
             <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
               <span className="italic text-seal-500">设</span>置
             </h1>

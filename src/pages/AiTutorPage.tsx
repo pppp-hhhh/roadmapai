@@ -88,7 +88,7 @@ export default function AiTutorPage() {
               <Feather size={22} />
             </div>
             <div>
-              <div className="smallcaps mb-1">第 三 章 · 问 学</div>
+              <div className="smallcaps mb-1">第 四 章 · 问 学</div>
               <h1 className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
                 AI 导 师
               </h1>
