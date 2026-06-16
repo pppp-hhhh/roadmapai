@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RoadmapAI Hero Banner · 占位
+  风格:Fraunces 衬线 + 朱砂印章 + 金箔分隔线,呼应「学者的手稿」视觉系统
+  替换方法:用真实截图覆盖此文件,或保留此 SVG 作为无截图时的回退
+-->
+<svg xmlns="http://www.w3.org/svg/2000" viewBox="0 0 1440 480" role="img" aria-label="RoadmapAI · 学者的手稿">
+  <defs>
+    <linearGradient id="paper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#f3eedf"/>
+      <stop offset="100%" stop-color="#e1d8c2"/>
+    </linearGradient>
+    <linearGradient id="night" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#1a1815"/>
+      <stop offset="100%" stop-color="#0e0d0b"/>
+    </linearGradient>
+    <linearGradient id="seal" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#c84a2b"/>
+      <stop offset="100%" stop-color="#7d2611"/>
+    </linearGradient>
+    <linearGradient id="gilt" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#a87a3a" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#c89a4f"/>
+      <stop offset="100%" stop-color="#a87a3a" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景 · 夜色纸 -->
+  <rect width="1440" height="480" fill="url(#night)"/>
+
+  <!-- 摊开的书页(居中) -->
+  <g transform="translate(360 60)">
+    <path d="M0 360
+             L0 80
+             Q180 40 360 80
+             Q540 40 720 80
+             L720 360
+             Q540 320 360 360
+             Q180 320 0 360 Z"
+          fill="#e3d6a8" stroke="#26200f" stroke-width="10" stroke-linejoin="round" opacity=".95"/>
+    <!-- 书脊 -->
+    <line x1="360" y1="80" x2="360" y2="360" stroke="#26200f" stroke-width="8"/>
+
+    <!-- 左页 · 5 行手写感波浪文字 + 1 段红色下划线 -->
+    <g stroke-linecap="round" fill="none">
+      <path d="M70 130 Q88 124, 106 130 T142 130 T178 130 T214 130 T250 130" stroke="#26200f" stroke-width="3"/>
+      <path d="M70 165 Q89 159, 108 165 T146 165 T184 165 T222 165 T260 165" stroke="#26200f" stroke-width="3"/>
+      <path d="M70 200 Q87 194, 104 200 T138 200 T172 200 T206 200 T240 200" stroke="#26200f" stroke-width="3"/>
+      <path d="M70 235 Q88 229, 106 235 T142 235 T178 235 T214 235 T250 235" stroke="#26200f" stroke-width="3"/>
+      <path d="M70 270 Q88 264, 106 270 T142 270 T178 270 T214 270 T250 270" stroke="#26200f" stroke-width="3"/>
+      <line x1="70" y1="315" x2="200" y2="314" stroke="url(#seal)" stroke-width="5"/>
+    </g>
+
+    <!-- 右页 · 3 行波浪文字(刚翻到的章节) -->
+    <g stroke-linecap="round" fill="none" opacity=".85">
+      <path d="M400 130 Q418 124, 436 130 T472 130 T508 130 T544 130" stroke="#26200f" stroke-width="3"/>
+      <path d="M400 165 Q419 159, 438 165 T476 165 T514 165 T552 165" stroke="#26200f" stroke-width="3"/>
+      <path d="M400 200 Q417 194, 434 200 T468 200 T502 200 T536 200" stroke="#26200f" stroke-width="3"/>
+    </g>
+  </g>
+
+  <!-- 顶部金箔分隔线 -->
+  <rect x="0" y="40" width="1440" height="1" fill="url(#gilt)"/>
+  <rect x="0" y="440" width="1440" height="1" fill="url(#gilt)"/>
+
+  <!-- 标题文字 -->
+  <text x="720" y="445" text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="14" font-style="italic" fill="#a87a3a" letter-spacing="3">
+    R O A D M A P A I   ·   卷 首
+  </text>
+</svg>
