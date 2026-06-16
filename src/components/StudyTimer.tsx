@@ -5,10 +5,10 @@ const STORAGE_KEY = 'study-timer-state';
 const DEFAULT_MINUTES = 25;
 
 interface TimerState {
-  endTime: number | null;  // timestamp when timer ends (null = not running)
-  pausedAt: number | null; // timestamp when paused (null = running)
-  totalSeconds: number;    // total seconds for this session
-  elapsedSeconds: number;  // elapsed seconds when paused
+  endTime: number | null;
+  pausedAt: number | null;
+  totalSeconds: number;
+  elapsedSeconds: number;
 }
 
 function loadState(): TimerState {
@@ -28,13 +28,11 @@ export default function StudyTimer() {
   const [state, setState] = useState<TimerState>(loadState);
   const [now, setNow] = useState(Date.now());
 
-  // Tick every second
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate remaining seconds
   const getRemaining = useCallback(() => {
     if (state.endTime && !state.pausedAt) {
       return Math.max(0, Math.ceil((state.endTime - now) / 1000));
@@ -50,11 +48,8 @@ export default function StudyTimer() {
   const seconds = remaining % 60;
   const progress = 1 - remaining / state.totalSeconds;
 
-  // Save state on mount if running
   useEffect(() => {
-    if (state.endTime && !state.pausedAt) {
-      saveState(state);
-    }
+    if (state.endTime && !state.pausedAt) saveState(state);
   }, [state.endTime, state.pausedAt]);
 
   const handleStart = () => {
@@ -107,18 +102,17 @@ export default function StudyTimer() {
   const isRunning = state.endTime !== null && state.pausedAt === null;
   const isDone = remaining <= 0 && state.endTime !== null;
 
-  // Ring dimensions
-  const size = 80;
-  const stroke = 5;
+  const size = 48;
+  const stroke = 3;
   const radius = (size - stroke) / 2;
   const circ = 2 * Math.PI * radius;
   const offset = circ * (1 - progress);
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
-      {/* Panel */}
+      {/* Panel — manuscript-card(墨边浅金边阴影,无圆角) */}
       {expanded && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-64">
+        <div className="manuscript-card p-4 w-64">
           <div className="flex items-center justify-between mb-3">
             <div className="flex gap-1">
               {[15, 25, 45, 60].map(m => (
@@ -126,79 +120,100 @@ export default function StudyTimer() {
                   key={m}
                   onClick={() => handleSetMinutes(m)}
                   disabled={isRunning}
-                  className={`text-xs px-2 py-1 rounded-lg transition-colors ${
-                    state.totalSeconds === m * 60
-                      ? 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  } disabled:opacity-50`}
+                  className={`text-[10px] px-2 py-1 font-mono tabular-nums transition-colors border
+                    ${state.totalSeconds === m * 60
+                      ? 'border-seal-400 bg-seal-50 dark:bg-seal-700/20 text-seal-500'
+                      : 'border-ink-300 dark:border-ink-600 text-ink-500 dark:text-ink-200 hover:border-seal-400 hover:text-seal-500'
+                    } disabled:opacity-30 disabled:cursor-not-allowed`}
                 >
-                  {m}min
+                  {m} min
                 </button>
               ))}
             </div>
-            <button onClick={() => setExpanded(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-              <X size={16} className="text-gray-400" />
+            <button
+              onClick={() => setExpanded(false)}
+              className="p-1 text-ink-fade hover:text-seal-500 transition-colors"
+            >
+              <X size={15} />
             </button>
           </div>
 
           {/* Timer display */}
-          <div className="text-center mb-3">
-            <div className={`text-3xl font-mono font-bold ${isDone ? 'text-green-500' : 'text-gray-900 dark:text-white'}`}>
-              {isDone ? '✅ 完成!' : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`}
+          <div className="text-center mb-4">
+            <div className={`font-mono font-bold text-4xl tabular-nums leading-none
+              ${isDone ? 'text-seal-500' : 'text-ink-700 dark:text-ink-50'}`}>
+              {isDone ? '完 卷' : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`}
             </div>
-            {isRunning && (
-              <div className="text-xs text-primary-500 mt-1 animate-pulse">学习中...</div>
-            )}
-            {state.pausedAt !== null && remaining < state.totalSeconds && (
-              <div className="text-xs text-gray-400 mt-1">已暂停 · 关闭应用后计时将保留</div>
-            )}
-            {!isRunning && state.elapsedSeconds === 0 && (
-              <div className="text-xs text-gray-400 mt-1">专注学习计时器 · 数据自动保存</div>
-            )}
+            <div className="smallcaps mt-2 text-[9px]">
+              {isDone ? <span className="text-gilt-500">— 于 时 光 之 末 —</span> :
+                isRunning ? <span className="text-seal-500 animate-flame">研 习 中</span> :
+                state.pausedAt !== null ? <span className="text-ink-fade">已 暂 停 · 关 闭 应 用 后 计 时 仍 留</span> :
+                <span className="text-ink-fade">专 注 学 习 计 时 · 数 据 自 动 存</span>}
+            </div>
           </div>
 
           {/* Controls */}
-          <div className="flex justify-center gap-2">
+          <div className="flex justify-center gap-2 pt-3 border-t border-dashed border-ink-200/60 dark:border-ink-700/40">
             {!isRunning ? (
-              <button onClick={handleStart} className="flex items-center gap-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm transition-colors">
-                <Play size={16} />{state.elapsedSeconds > 0 ? '继续' : '开始'}
+              <button
+                onClick={handleStart}
+                className="flex items-center gap-1.5 px-4 py-2
+                  bg-seal-500 hover:bg-seal-400 text-ink-50
+                  transition-colors font-display text-sm
+                  border-2 border-seal-600 min-w-[5rem] justify-center"
+              >
+                <Play size={14} />
+                <span>{state.elapsedSeconds > 0 ? '续 笔' : '开 卷'}</span>
               </button>
             ) : (
-              <button onClick={handlePause} className="flex items-center gap-1 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl text-sm transition-colors">
-                <Pause size={16} />暂停
+              <button
+                onClick={handlePause}
+                className="flex items-center gap-1.5 px-4 py-2
+                  border-2 border-gilt-500 bg-gilt-500/10 text-gilt-500
+                  hover:bg-gilt-500/20 transition-colors font-display text-sm
+                  min-w-[5rem] justify-center"
+              >
+                <Pause size={14} />
+                <span>停 笔</span>
               </button>
             )}
-            <button onClick={handleReset} disabled={!isRunning && state.elapsedSeconds === 0}
-              className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 transition-colors">
-              <RotateCcw size={16} />
+            <button
+              onClick={handleReset}
+              disabled={!isRunning && state.elapsedSeconds === 0}
+              className="p-2 border border-ink-300 dark:border-ink-600
+                text-ink-500 dark:text-ink-200 hover:border-seal-400 hover:text-seal-500
+                disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="重 置"
+            >
+              <RotateCcw size={15} />
             </button>
           </div>
         </div>
       )}
 
-      {/* Floating button */}
+      {/* Floating button — 方形 56px(不是圆)+ 手稿边框 + gilt-500 阴影 */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110
+        className={`w-14 h-14 flex items-center justify-center transition-all
           ${isRunning
-            ? 'bg-primary-600 text-white animate-pulse'
+            ? 'bg-seal-500 text-ink-50 shadow-seal animate-flame'
             : isDone
-            ? 'bg-green-500 text-white'
-            : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
+              ? 'bg-gilt-500 text-ink-50 shadow-candle'
+              : 'bg-paper dark:bg-night-200 text-ink-700 dark:text-ink-100 border-2 border-ink-700 dark:border-gilt-500 hover:border-seal-400'
           }`}
         title="学习计时器"
       >
         {isRunning ? (
-          <div className="relative w-12 h-12">
+          <div className="relative w-10 h-10">
             <svg className="w-full h-full -rotate-90" viewBox={`0 0 ${size} ${size}`}>
-              <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={stroke} opacity={0.3} />
+              <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={stroke} opacity={0.35} />
               <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={stroke}
                 strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" />
             </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{minutes}</span>
+            <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-bold">{minutes}</span>
           </div>
         ) : (
-          <Timer size={24} />
+          <Timer size={22} />
         )}
       </button>
     </div>

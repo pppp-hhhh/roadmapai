@@ -266,7 +266,7 @@ export default function RoadmapDetailPage() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-[860px] mx-auto px-12 py-10">
           <div className="smallcaps mb-6 flex items-center gap-3">
-            <span>章 回</span>
+            <span>第 三 章 · 通 卷</span>
             <span className="font-display normal-case tracking-normal text-ink-fade italic text-xs">— Chapters —</span>
           </div>
 

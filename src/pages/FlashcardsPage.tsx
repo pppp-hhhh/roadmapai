@@ -405,7 +405,7 @@ export default function FlashcardsPage() {
             flex items-center justify-center mx-auto mb-5 text-seal-500">
             <Brain size={28} />
           </div>
-          <div className="smallcaps mb-3">第 七 章 · 温 故</div>
+          <div className="smallcaps mb-3">第 六 章 · 温 故</div>
           <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
             <span className="italic text-seal-500">记</span>忆 卡 片
           </h1>

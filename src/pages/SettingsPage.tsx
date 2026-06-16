@@ -61,6 +61,22 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [tavilySaving, setTavilySaving] = useState(false);
+  const [tavilySavedAt, setTavilySavedAt] = useState<number | null>(null);
+
+  const handleSaveTavily = async () => {
+    if (tavilySaving) return;
+    setTavilySaving(true);
+    try {
+      await saveApiKey('tavily', tavilyKey);
+      setTavilySavedAt(Date.now());
+    } catch (e) {
+      setTestResult({ success: false, message: `保 存 失 败: ${e}` });
+    } finally {
+      setTavilySaving(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setTestResult(null);
@@ -107,7 +123,7 @@ export default function SettingsPage() {
         {/* ====== 顶部 — 卷首 ====== */}
         <header className="mb-10 flex items-start justify-between animate-ink-spread">
           <div>
-            <div className="smallcaps mb-3">第 五 章 · 置 砚</div>
+            <div className="smallcaps mb-3">第 八 章 · 置 砚</div>
             <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
               <span className="italic text-seal-500">设</span>置
             </h1>
@@ -363,6 +379,28 @@ export default function SettingsPage() {
                   className="text-seal-500 border-b border-seal-400/50 hover:border-seal-500">tavily.com</a> 免费注册。
                 配置后生成路线时将自动寻访真实可访问的学习链接。
               </p>
+              <div className="mt-4 pt-3 border-t border-dashed border-ink-200/60 dark:border-ink-700/40 flex items-center justify-between">
+                <span className="font-display italic text-[11px] text-ink-fade">
+                  {tavilySavedAt
+                    ? <span className="text-seal-500">✓ 已 落 匣 · {new Date(tavilySavedAt).toLocaleTimeString()}</span>
+                    : '未 单 独 保 存'}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSaveTavily}
+                  disabled={tavilySaving}
+                  className="flex items-center gap-2 px-5 py-2
+                    border border-ink-300 dark:border-ink-600
+                    hover:border-seal-400 hover:text-seal-500
+                    transition-colors font-display text-xs text-ink-600 dark:text-ink-200
+                    disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {tavilySaving
+                    ? <><Loader2 size={12} className="animate-spin" /><span>落 匣 中</span></>
+                    : <><Save size={12} /><span>单 独 落 匣</span></>
+                  }
+                </button>
+              </div>
             </div>
           </section>
 

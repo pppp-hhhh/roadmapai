@@ -84,7 +84,7 @@ export default function HomePage() {
 
         {/* ====== 标题区 — 像书脊 ====== */}
         <header className="mb-10 animate-ink-spread">
-          <div className="smallcaps mb-3">卷 首 语 · Preface</div>
+          <div className="smallcaps mb-3">第 一 章 · 卷 首</div>
           <h1 className="font-display text-[56px] leading-[1.05] font-semibold text-ink-700 dark:text-ink-100 tracking-tight">
             我的<span className="italic font-normal text-seal-500">学习</span>路线
           </h1>

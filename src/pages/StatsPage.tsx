@@ -52,7 +52,7 @@ export default function StatsPage() {
       <div className="h-full overflow-y-auto">
         <div className="max-w-2xl mx-auto px-12 py-10">
           <header className="mb-8 animate-ink-spread">
-            <div className="smallcaps mb-3">第 六 章 · 检 卷</div>
+            <div className="smallcaps mb-3">第 七 章 · 检 卷</div>
             <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
               <span className="italic text-seal-500">学</span>习 统 计
             </h1>
@@ -92,7 +92,7 @@ export default function StatsPage() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-3xl mx-auto px-12 py-10">
         <header className="mb-10 animate-ink-spread">
-          <div className="smallcaps mb-3">第 六 章 · 检 卷</div>
+          <div className="smallcaps mb-3">第 七 章 · 检 卷</div>
           <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
             <span className="italic text-seal-500">学</span>习 统 计
           </h1>

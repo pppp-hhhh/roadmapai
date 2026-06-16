@@ -59,7 +59,7 @@ export default function CreateRoadmapPage() {
         </button>
 
         <header className="mb-8 animate-ink-spread">
-          <div className="smallcaps mb-3">第 四 章 · 拟 纲</div>
+          <div className="smallcaps mb-3">第 二 章 · 拟 纲</div>
           <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
             <span className="italic text-seal-500">创</span>建 学 习 路 线
           </h1>

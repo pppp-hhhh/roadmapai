@@ -11,6 +11,24 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/hero.svg" alt="RoadmapAI · 学者的手稿" width="720">
+</p>
+
+---
+
+## 📸 预览 / Preview
+
+| 首页 · 我的学习路线 | 撰新篇 · AI 生成路线 |
+|:---:|:---:|
+| ![首页](docs/screenshots/home.png) | ![创建路线](docs/screenshots/create.png) |
+| **路线详情 · 阶段与任务** | **抽认卡 · SM-2 间隔重复** |
+| ![路线详情](docs/screenshots/roadmap-detail.png) | ![抽认卡](docs/screenshots/flashcards.png) |
+| **AI 导师 · 流式对话** | **收藏夹 · 直达内容** |
+| ![AI 导师](docs/screenshots/ai-tutor.png) | ![收藏夹](docs/screenshots/favorites.png) |
+
+> 📂 截图存放在 [`docs/screenshots/`](docs/screenshots/)。本地预览时相对路径即可；若推送到 GitHub 后图片未显示，请确认仓库为 **public** 或已开启 Pages 资源代理。
+
 ---
 
 ## 简介 / Introduction
@@ -61,6 +79,7 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 │   │   ├── wizard/             # 创建路线 wizard 步骤
 │   │   ├── ai-loop/            # 消息→任务/卡片/资源的抽屉
 │   │   ├── drawer/             # 通用 SideDrawer
+│   │   ├── onboarding/         # 首次引导步骤
 │   │   └── sidebar/            # 侧边栏 4 个子组件
 │   ├── pages/                  # 页面组件
 │   │   ├── HomePage.tsx        # 首页仪表盘
@@ -77,10 +96,13 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 │   └── utils/                  # 工具函数 (markdown 渲染 / 闪卡预览)
 ├── src-tauri/                  # Rust 后端
 │   ├── src/
-│   │   ├── commands/           # Tauri 命令 (20+)
+│   │   ├── commands/           # Tauri 命令
 │   │   │   ├── roadmap.rs      # 路线生成与 CRUD
 │   │   │   ├── flashcard.rs    # SM-2 抽认卡
 │   │   │   ├── chat.rs         # AI 对话
+│   │   │   ├── ai_loop.rs      # AI 回路(消息→任务/卡片/资源)
+│   │   │   ├── favorites.rs    # 收藏夹
+│   │   │   ├── stats.rs        # 学习统计
 │   │   │   └── settings.rs     # API 配置
 │   │   ├── db/mod.rs           # SQLite 数据库层
 │   │   ├── models/mod.rs       # 数据模型
@@ -88,7 +110,10 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 │   │       ├── ai.rs           # AI 提供商实现
 │   │       ├── parallel.rs     # 并行生成
 │   │       └── roadmap_parser.rs  # AI 响应解析
+│   ├── icons/                  # 应用图标(多尺寸 + 源 SVG/PNG)
 │   └── tauri.conf.json         # Tauri 配置
+├── docs/
+│   └── screenshots/            # README 预览图
 └── package.json
 ```
 
@@ -154,8 +179,6 @@ npm run tauri build
 | **DeepSeek-V4-Flash** | ⭐ 推荐 | ✅ 可用 | 速度快，JSON 输出稳定，不易截断 |
 | **MiniMax-M2.7** | ✅ 可用 | ✅ 可用 | 成本低，速度适中 |
 | **MiniMax-M3** | ❌ 不推荐 | ⭐ 推荐 | 推理模型，会花大量 token 在思考上，导致 JSON 截断 |
-| **Claude Sonnet 4** | ✅ 可用 | ✅ 可用 | 质量高但成本高，速度中等 |
-| **GPT-4o** | ✅ 可用 | ✅ 可用 | 综合能力强，但需注意 token 限制 |
 
 > 💡 **最佳实践**：路线生成用 DeepSeek-V4-Flash，AI 导师对话用 MiniMax-M3。在设置页面可以分别配置不同模型的自定义接口。
 
@@ -208,3 +231,4 @@ MIT © RoadmapAI
 - ⚠️ 推理模型（如 MiniMax-M3）不适合路线生成，会产生大量推理内容导致 JSON 截断，建议用于 AI 导师对话
 - ⚠️ 项目仍存在不少 bug，会逐步修复，欢迎提 issue 反馈
 - 无测试、无 CI — TypeScript 严格模式在 `npm run build` 时进行类型检查
+- 📸 README 预览图由 [`docs/screenshots/`](docs/screenshots/) 提供；准备好截图后只需将同名文件覆盖即可在 README 看到效果（推荐 16:9，深色主题）

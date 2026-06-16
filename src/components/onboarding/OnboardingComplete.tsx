@@ -55,7 +55,7 @@ const OnboardingComplete: FC = () => {
             text-ink-50 transition-all font-display text-base"
         >
           <BookOpen size={17} />
-          <span>启 卷 · 第 一 章</span>
+          <span>启 卷 · 第 一 章 · 卷 首</span>
           <ArrowRight size={17} className="transition-transform group-hover:translate-x-1" />
         </button>
         {!cancelled ? (
