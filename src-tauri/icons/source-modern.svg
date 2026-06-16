@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RoadmapAI Logo · 方案 C · 现代简洁版
+  设计语言：圆角矩形 + 单色渐变（朱砂→深褐） + 单字 R + 路径终点
+  目标场景：README 头图、社交媒体、灰底背景
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="RoadmapAI">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#c84a2b"/>
+      <stop offset="50%"  stop-color="#a8351a"/>
+      <stop offset="100%" stop-color="#3a160a"/>
+    </linearGradient>
+
+    <!-- 内层柔光（让渐变不死板） -->
+    <radialGradient id="glow" cx="30%" cy="20%" r="70%">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity=".18"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="ink" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#fbf8f0"/>
+      <stop offset="100%" stop-color="#e7dfc8"/>
+    </linearGradient>
+
+    <linearGradient id="star" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#f0d684"/>
+      <stop offset="100%" stop-color="#a8862f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 圆角容器 -->
+  <rect width="1024" height="1024" rx="208" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="208" fill="url(#glow)"/>
+
+  <!-- 装饰：右上角烫金小章 -->
+  <circle cx="860" cy="170" r="36" fill="url(#star)" opacity=".9"/>
+
+  <!-- R 主字（衬线、粗笔画） -->
+  <g fill="url(#ink)">
+    <!-- R 竖 -->
+    <rect x="240" y="240" width="64" height="544" rx="32"/>
+    <!-- R 上弧（用 path 画圆润感） -->
+    <path d="M240 240
+             L500 240
+             Q620 240 620 360
+             Q620 480 500 480
+             L240 480
+             L240 416
+             L500 416
+             Q556 416 556 360
+             Q556 304 500 304
+             L304 304
+             L304 240 Z"/>
+    <!-- R 斜腿（从右肩斜下到右下，作为路径起点） -->
+    <path d="M460 480
+             L560 480
+             L660 720
+             L600 784
+             L460 580 Z"/>
+  </g>
+
+  <!-- 路径终点星（金色，位于 R 腿下端） -->
+  <circle cx="630" cy="790" r="46" fill="url(#star)"/>
+  <circle cx="630" cy="790" r="22" fill="#a8351a"/>
+</svg>

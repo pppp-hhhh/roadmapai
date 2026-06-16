@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RoadmapAI Logo · 方案 A v18 · 手稿主题（手写感波浪线）
+  v17 → v18：所有黑色文字线从直线改为手写感波浪线（贝塞尔 S 形）
+  红色下划线保持直线（标识"重点"，用规整的横线更明确）
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="RoadmapAI">
+  <defs>
+    <linearGradient id="paper" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#f3eedf"/>
+      <stop offset="100%" stop-color="#e1d8c2"/>
+    </linearGradient>
+
+    <linearGradient id="seal" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#c84a2b"/>
+      <stop offset="100%" stop-color="#7d2611"/>
+    </linearGradient>
+
+    <filter id="pageShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="20"/>
+      <feOffset dx="0" dy="16" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".5"/></feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <clipPath id="pageClip">
+      <path d="M88 864
+               L88 256
+               Q256 192 512 256
+               Q768 192 936 256
+               L936 864
+               Q768 800 512 864
+               Q256 800 88 864 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- ====== 主体：摊开的书页（垂直居中，撑满主图宽度，背景透明）====== -->
+  <g filter="url(#pageShadow)">
+    <path d="M88 864
+             L88 256
+             Q256 192 512 256
+             Q768 192 936 256
+             L936 864
+             Q768 800 512 864
+             Q256 800 88 864 Z"
+          fill="#e3d6a8" stroke="#26200f" stroke-width="24" stroke-linejoin="round"/>
+
+    <!-- 左页：4 条细长的手写感波浪线 + 1 段红色直线下划线 -->
+    <g clip-path="url(#pageClip)" stroke-linecap="round" fill="none">
+      <!-- 第 1 行：x=200→460，长 260 -->
+      <path d="M200 378 Q223 368, 246 378 T292 378 T338 378 T384 378 T430 378 T460 378"
+            stroke="#26200f" stroke-width="6"/>
+      <!-- 第 2 行：x=200→440，长 240 -->
+      <path d="M200 450 Q221 440, 242 450 T284 450 T326 450 T368 450 T410 450 T440 450"
+            stroke="#26200f" stroke-width="6"/>
+      <!-- 第 3 行：x=200→470，长 270（最长） -->
+      <path d="M200 522 Q224 512, 248 522 T296 522 T344 522 T392 522 T440 522 T470 522"
+            stroke="#26200f" stroke-width="6"/>
+      <!-- 第 4 行：x=200→420，长 220 -->
+      <path d="M200 594 Q219 584, 238 594 T276 594 T314 594 T352 594 T390 594 T420 594"
+            stroke="#26200f" stroke-width="6"/>
+      <!-- 红色下划线（重点 / 启程） —— 保持直线 -->
+      <line x1="200" y1="680" x2="360" y2="678" stroke="url(#seal)" stroke-width="9"/>
+    </g>
+
+    <!-- 右页：1 条细长的手写感波浪线（与左页第 1 行同高、贴书脊——"刚翻到新页、刚起笔"） -->
+    <g clip-path="url(#pageClip)" stroke-linecap="round" fill="none">
+      <path d="M560 378 Q581 368, 602 378 T644 378 T686 378 T728 378 T760 378 T780 378"
+            stroke="#26200f" stroke-width="6" opacity=".85"/>
+    </g>
+
+    <!-- 书脊中线（粗而清晰） -->
+    <line x1="512" y1="256" x2="512" y2="864" stroke="#26200f" stroke-width="20"/>
+  </g>
+</svg>
