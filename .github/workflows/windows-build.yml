@@ -1,0 +1,35 @@
+name: Build Windows App
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Windows bundles
+        run: npm run tauri build
+
+      - name: Upload Windows bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoadmapAI-windows
+          path: src-tauri/target/release/bundle/
+          if-no-files-found: error

@@ -156,6 +156,16 @@ npm run tauri build
 
 构建产物位于 `src-tauri/target/release/bundle/`。
 
+#### Windows 构建 / Windows build
+
+macOS / Linux 无法直接产出 Windows 安装包，请使用仓库内置的 GitHub Actions 工作流（`.github/workflows/windows-build.yml`）：
+
+1. 推送代码后，打开 GitHub 仓库的 **Actions** 页面
+2. 选择 **Build Windows App** → **Run workflow**
+3. 构建完成后，在对应运行记录中下载 `RoadmapAI-windows` artifact，内含 NSIS / MSI 安装包
+
+也可以推送 `v*` 标签（如 `v1.1.0`）自动触发构建。
+
 ---
 
 ## ⚙️ 配置 / Configuration
