@@ -32,6 +32,15 @@ export default function CreateRoadmapPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [topic]);
 
+  // 离开创建页时若生成仍在进行,主动取消,避免后台继续生成
+  useEffect(() => {
+    return () => {
+      if (useRoadmapStore.getState().isGenerating) {
+        void useRoadmapStore.getState().cancelGeneration();
+      }
+    };
+  }, []);
+
   const canGo = canProceedFromStep(currentStep, { topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject });
 
   const handleSubmit = async () => {

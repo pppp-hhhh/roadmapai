@@ -1,4 +1,4 @@
-import { useEffect, useState, type FC } from 'react';
+import { useEffect, type FC } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, BookOpen } from 'lucide-react';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
@@ -7,18 +7,17 @@ import ManuscriptMark from '../manuscript/ManuscriptMark';
 const OnboardingComplete: FC = () => {
   const navigate = useNavigate();
   const { createdRoadmapId, markCompleted } = useOnboardingStore();
-  const [countdown, setCountdown] = useState(5);
-  const [cancelled, setCancelled] = useState(false);
 
   useEffect(() => { markCompleted(); }, [markCompleted]);
 
   useEffect(() => {
-    if (cancelled) return;
-    if (countdown <= 0) { handleGo(); return; }
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    const t = setTimeout(() => {
+      if (createdRoadmapId) navigate(`/roadmap/${createdRoadmapId}`);
+      else navigate('/');
+    }, 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdown, cancelled]);
+  }, [createdRoadmapId]);
 
   const handleGo = () => {
     if (createdRoadmapId) navigate(`/roadmap/${createdRoadmapId}`);
@@ -41,7 +40,7 @@ const OnboardingComplete: FC = () => {
       </p>
       {createdRoadmapId && (
         <p className="font-display italic text-sm text-ink-fade mb-8">
-          将自动翻至详情。
+          即将自动翻至详情。
         </p>
       )}
 
@@ -58,16 +57,6 @@ const OnboardingComplete: FC = () => {
           <span>启 卷 · 第 一 章 · 卷 首</span>
           <ArrowRight size={17} className="transition-transform group-hover:translate-x-1" />
         </button>
-        {!cancelled ? (
-          <button
-            onClick={() => setCancelled(true)}
-            className="font-display italic text-xs text-ink-fade hover:text-seal-500 transition-colors"
-          >
-            {countdown} 秒后自动翻页 (点击留步)
-          </button>
-        ) : (
-          <div className="font-display italic text-xs text-ink-fade/60">已留步</div>
-        )}
       </div>
     </div>
   );

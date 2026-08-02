@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Key, Settings as SettingsIcon, Check, X, Loader2, Save, ChevronDown, Sun, Moon, Search, Zap, Eye, EyeOff, ScrollText, Compass } from 'lucide-react';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
 import { roman } from '../components/manuscript/roman';
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
   const {
     theme, setTheme, saveApiKey, getApiKey, saveApiConfig, getApiConfig, testConnection, setAiProvider, error,
   } = useSettingsStore();
@@ -15,6 +17,7 @@ export default function SettingsPage() {
   const [showKey, setShowKey] = useState(false);
   const [showTavilyKey, setShowTavilyKey] = useState(false);
   const [tavilyKey, setTavilyKey] = useState('');
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showProviderDropdown, setShowProviderDropdown] = useState(false);
@@ -133,12 +136,7 @@ export default function SettingsPage() {
             <div className="rule-gilt mt-5 max-w-xs" />
           </div>
           <button
-            onClick={() => {
-              if (confirm('确定重新运行新手引导?这将清空当前引导进度。')) {
-                useOnboardingStore.getState().reset();
-                window.location.assign('/onboarding');
-              }
-            }}
+            onClick={() => setShowRestartConfirm(true)}
             className="font-display italic text-xs text-ink-fade hover:text-seal-500
               border-b border-dotted border-ink-fade/40 hover:border-seal-500 transition-colors mt-2"
           >
@@ -470,6 +468,46 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {showRestartConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 dark:bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setShowRestartConfirm(false)}
+        >
+          <div
+            className="manuscript-card max-w-sm w-full p-7 animate-ink-spread"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="smallcaps mb-3 text-seal-500">— 提 示 —</div>
+            <h3 className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 mb-2 tracking-tight">
+              重 启 序 章?
+            </h3>
+            <p className="font-display italic text-sm text-ink-fade leading-relaxed mb-6">
+              将重新运行新手引导,并清空当前引导进度。
+              <br />已有路线与笔记不受影响。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowRestartConfirm(false)}
+                autoFocus
+                className="px-4 py-2 font-display text-sm text-ink-fade hover:text-seal-500 transition-colors"
+              >
+                续 写
+              </button>
+              <button
+                onClick={() => {
+                  setShowRestartConfirm(false);
+                  useOnboardingStore.getState().reset();
+                  navigate('/onboarding');
+                }}
+                className="px-4 py-2 bg-seal-500 hover:bg-seal-400 text-ink-50 font-display text-sm transition-colors"
+              >
+                重 启
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

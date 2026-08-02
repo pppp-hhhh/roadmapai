@@ -14,6 +14,7 @@ interface RoadmapState {
   fetchRoadmaps: () => Promise<void>;
   fetchRoadmap: (id: string) => Promise<void>;
   generateRoadmap: (params: RoadmapRequest) => Promise<string>;
+  cancelGeneration: () => Promise<void>;
   deleteRoadmap: (id: string) => Promise<void>;
   markTaskCompleted: (taskId: string, completed: boolean) => Promise<void>;
   submitQuiz: (stageId: string, answers: number[]) => Promise<QuizResult>;
@@ -68,6 +69,14 @@ export const useRoadmapStore = create<RoadmapState>((set, get) => ({
       set({ error: String(error), isGenerating: false, progress: null });
       unlisten();
       throw error;
+    }
+  },
+
+  cancelGeneration: async () => {
+    try {
+      await invoke('cancel_generation');
+    } catch {
+      // 生成可能已结束或尚未开始，无需处理
     }
   },
 

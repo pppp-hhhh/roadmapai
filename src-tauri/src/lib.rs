@@ -8,12 +8,14 @@ pub use models::*;
 pub use services::*;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use tokio::sync::Mutex;
 use tauri::Manager;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 pub struct AppState {
     pub db: Arc<Mutex<Database>>,
+    pub gen_cancel: Arc<AtomicUsize>,
     _log_guard: tracing_appender::non_blocking::WorkerGuard,
 }
 
@@ -54,6 +56,7 @@ pub fn run() {
 
                 let state = AppState {
                     db: Arc::new(Mutex::new(db)),
+                    gen_cancel: Arc::new(AtomicUsize::new(0)),
                     _log_guard: log_guard,
                 };
 
@@ -65,6 +68,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::roadmap::generate_roadmap,
+            commands::roadmap::cancel_generation,
             commands::roadmap::get_roadmap,
             commands::roadmap::get_all_roadmaps,
             commands::roadmap::delete_roadmap,

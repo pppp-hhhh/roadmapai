@@ -1,4 +1,5 @@
 import { useState, type FC, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   NetworkDownIllustration,
   KeyIllustration,
@@ -68,6 +69,7 @@ const ErrorState: FC<ErrorStateProps> = ({
   className = '',
 }) => {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const navigate = useNavigate();
   const errorText = error ? (error instanceof Error ? error.message : String(error)) : null;
 
   const finalTitle = title ?? LEVEL_DEFAULT_TITLE[level];
@@ -81,8 +83,8 @@ const ErrorState: FC<ErrorStateProps> = ({
       variant: a.variant,
       disabled: a.disabled,
       onClick: () => {
-        if (a.label === '去 设 置' || a.label === '去设置') window.location.assign('/settings');
-        else if (a.label === '返 回 首 页' || a.label === '返回首页') window.location.assign('/');
+        if (a.label === '去 设 置' || a.label === '去设置') navigate('/settings');
+        else if (a.label === '返 回 首 页' || a.label === '返回首页') navigate('/');
         else if (onRetry) onRetry();
       },
     }));

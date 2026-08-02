@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, BookOpen, Clock } from 'lucide-react';
+import { Plus, Search, BookOpen, Clock, Trash2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 import type { Stage } from '../types';
@@ -223,16 +223,19 @@ export default function HomePage() {
                       </div>
                       <button
                         onClick={(e) => handleDelete(e, roadmap.id)}
-                        className={`p-1 transition-all ${
+                        className={`flex items-center justify-center h-7 border transition-all ${
                           isDeleting
-                            ? 'bg-seal-500 text-ink-50 px-2'
-                            : 'opacity-0 group-hover:opacity-100 text-ink-fade hover:text-seal-500'
+                            ? 'bg-seal-500 text-ink-50 border-seal-600 px-2 w-auto'
+                            : 'w-7 border-ink-300 dark:border-ink-600 text-ink-400 dark:text-ink-300 hover:border-seal-500 hover:text-seal-500 hover:bg-seal-500/10'
                         }`}
                         title={isDeleting ? '再次点击以焚毁' : '销毁此卷'}
+                        aria-label={isDeleting ? '确认删除路线' : '删除路线'}
                       >
-                        <span className="font-mono text-[10px] tracking-wider">
-                          {isDeleting ? '确认 焚毁' : '×'}
-                        </span>
+                        {isDeleting ? (
+                          <span className="font-display text-xs whitespace-nowrap px-0.5">确 认 焚 毁</span>
+                        ) : (
+                          <Trash2 size={14} strokeWidth={2} />
+                        )}
                       </button>
                     </div>
 

@@ -3,14 +3,13 @@ import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 
 export type OnboardingStep = 0 | 1 | 2 | 3 | 4;
-export type ProviderChoice = 'anthropic' | 'openai' | 'deepseek' | 'custom';
 export type OnboardingLevel = '入门' | '进阶' | '高级';
 
 export interface OnboardingData {
-  provider: ProviderChoice;
   apiKey: string;
   baseUrl: string;
   model: string;
+  tavilyKey: string;
   topic: string;
   level: OnboardingLevel;
   goal: string;
@@ -29,28 +28,19 @@ interface OnboardingState extends OnboardingData {
   gotoStep: (step: OnboardingStep) => void;
   reset: () => void;
   markCompleted: () => void;
-  detectRecommendedRegion: () => Promise<'cn' | 'us' | 'other'>;
-  recommendProvider: (region: 'cn' | 'us' | 'other') => ProviderChoice;
   saveApiConfig: () => Promise<void>;
 }
 
 const initialData: OnboardingData = {
-  provider: 'anthropic',
   apiKey: '',
-  baseUrl: 'https://api.anthropic.com',
-  model: 'claude-3-5-sonnet-20241022',
+  baseUrl: '',
+  model: '',
+  tavilyKey: '',
   topic: '',
   level: '入门',
   goal: '',
   weeklyHours: 5,
   createdRoadmapId: null,
-};
-
-const PROVIDER_DEFAULTS: Record<ProviderChoice, { baseUrl: string; model: string }> = {
-  anthropic: { baseUrl: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022' },
-  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o' },
-  deepseek: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  custom: { baseUrl: '', model: '' },
 };
 
 export const useOnboardingStore = create<OnboardingState>()(
@@ -62,17 +52,6 @@ export const useOnboardingStore = create<OnboardingState>()(
       hasUnsavedChanges: false,
 
       setField: (key, value) => {
-        // provider 切换时,自动填充 baseUrl/model
-        if (key === 'provider' && typeof value === 'string') {
-          const def = PROVIDER_DEFAULTS[value as ProviderChoice];
-          set({
-            provider: value as ProviderChoice,
-            baseUrl: def.baseUrl,
-            model: def.model,
-            hasUnsavedChanges: true,
-          } as any);
-          return;
-        }
         set({ [key]: value, hasUnsavedChanges: true } as any);
       },
 
@@ -88,32 +67,21 @@ export const useOnboardingStore = create<OnboardingState>()(
       reset: () => set({ ...initialData, currentStep: 0, completed: false, hasUnsavedChanges: false }),
       markCompleted: () => set({ completed: true }),
 
-      detectRecommendedRegion: async () => {
-        try {
-          const region = await invoke<'cn' | 'us' | 'other'>('detect_user_region');
-          return region;
-        } catch {
-          return 'other';
-        }
-      },
-
-      recommendProvider: (region) => {
-        if (region === 'cn') return 'deepseek';
-        return 'anthropic';
-      },
-
       saveApiConfig: async () => {
-        const { provider, apiKey, baseUrl, model } = get();
-        // 映射:deepseek/custom 都走 openai 协议
-        const providerType: 'openai' | 'anthropic' =
-          provider === 'anthropic' ? 'anthropic' : 'openai';
-        const providerId = provider === 'anthropic' ? 'anthropic' : 'openai';
+        const { apiKey, baseUrl, model, tavilyKey } = get();
+        // 统一按自定义模型(OpenAI 兼容协议)保存,生成/对话都走 baseUrl + model
+        const providerType: 'openai' | 'anthropic' = 'openai';
+        const providerId = 'openai';
 
         await invoke('save_api_key', { provider: providerId, key: apiKey });
         await invoke('save_api_config', {
           provider: providerId,
           config: { base_url: baseUrl, model, provider_type: providerType },
         });
+        // 资源搜索 API Key(可选,仅在填写时保存,避免覆盖已有配置)
+        if (tavilyKey.trim()) {
+          await invoke('save_api_key', { provider: 'tavily', key: tavilyKey.trim() });
+        }
         // 同步到 useSettingsStore
         const { useSettingsStore } = await import('./useSettingsStore');
         useSettingsStore.getState().setAiProvider(providerId);
@@ -126,10 +94,10 @@ export const useOnboardingStore = create<OnboardingState>()(
     {
       name: 'roadmapai-onboarding',
       partialize: (s) => ({
-        provider: s.provider,
         apiKey: s.apiKey,
         baseUrl: s.baseUrl,
         model: s.model,
+        tavilyKey: s.tavilyKey,
         topic: s.topic,
         level: s.level,
         goal: s.goal,

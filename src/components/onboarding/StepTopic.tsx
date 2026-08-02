@@ -15,7 +15,7 @@ const StepTopic: FC = () => {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="text-center mb-10">
-        <div className="smallcaps mb-3">第 三 章 · 拟 题</div>
+        <div className="smallcaps mb-3">第 二 章 · 拟 题</div>
         <h2 className="font-display text-[40px] font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-tight mb-2">
           你 欲 研 何<span className="italic text-seal-500"> 术</span>
         </h2>

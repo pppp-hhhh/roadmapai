@@ -23,6 +23,20 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 
+async fn wait_cancelled(flag: &AtomicUsize, version: usize) {
+    while flag.load(Ordering::SeqCst) == version {
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    }
+}
+
+/// 请求取消当前进行中的生成任务（幂等，可重复调用）。
+#[tauri::command]
+pub fn cancel_generation(state: State<'_, AppState>) -> Result<(), String> {
+    state.gen_cancel.fetch_add(1, Ordering::SeqCst);
+    info!("==> 收到取消生成请求");
+    Ok(())
+}
+
 fn emit_roadmap_progress(
     app_handle: &tauri::AppHandle,
     event_type: &str,
@@ -272,6 +286,7 @@ pub async fn generate_roadmap(
     params: RoadmapRequest,
 ) -> Result<RoadmapResponse, String> {
     let total_t0 = Instant::now();
+    let cancel_version = state.gen_cancel.load(Ordering::SeqCst);
     info!("========== 开始生成学习路线（并行模式）==========");
     info!("主题：「{}」| 水平：{} | 目标：{}", params.topic, params.level, params.goal);
 
@@ -329,11 +344,17 @@ pub async fn generate_roadmap(
     info!("→ [大纲] 正在请求 AI 生成大纲...");
     let outline_t0 = Instant::now();
     let outline_prompt = build_outline_prompt(&params.topic, &params.goal, &params.level, &params.difficulty);
-    let outline_raw = call_ai(
-        &client, &provider_type, &base_url, &model, &api_key,
-        "你是一位学习路线图设计专家。始终返回符合要求格式的有效 JSON。",
-        &outline_prompt, 4000,
-    ).await.map_err(|e| format!("大纲生成失败：{}", e))?;
+    let outline_raw = tokio::select! {
+        r = call_ai(
+            &client, &provider_type, &base_url, &model, &api_key,
+            "你是一位学习路线图设计专家。始终返回符合要求格式的有效 JSON。",
+            &outline_prompt, 4000,
+        ) => r.map_err(|e| format!("大纲生成失败：{}", e))?,
+        _ = wait_cancelled(&state.gen_cancel, cancel_version) => {
+            info!("==> 生成已取消（大纲阶段）");
+            return Err("生成已取消".to_string());
+        }
+    };
 
     info!("→ [大纲] 响应已接收，耗时 {:.1}s，开始解析...", outline_t0.elapsed().as_secs_f64());
 
@@ -358,6 +379,11 @@ pub async fn generate_roadmap(
 
     info!("");
     info!("═══ Layer 2: Stage Skeletons（阶段骨架 {total} 并发）═══");
+
+    if state.gen_cancel.load(Ordering::SeqCst) != cancel_version {
+        info!("==> 生成已取消（进入阶段骨架前）");
+        return Err("生成已取消".to_string());
+    }
 
     let _all_titles: Vec<String> = outlines.iter().map(|o| o.title.clone()).collect();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(6));
@@ -445,9 +471,21 @@ pub async fn generate_roadmap(
         }));
     }
 
-    for h in skeleton_handles {
-        if let Ok(Ok(s)) = h.await {
-            stage_skeletons.push(s);
+    let mut skeleton_handles = skeleton_handles.into_iter();
+    while let Some(h) = skeleton_handles.next() {
+        tokio::select! {
+            res = h => {
+                if let Ok(Ok(s)) = res {
+                    stage_skeletons.push(s);
+                }
+            }
+            _ = wait_cancelled(&state.gen_cancel, cancel_version) => {
+                for remaining in skeleton_handles {
+                    remaining.abort();
+                }
+                info!("==> 生成已取消（阶段骨架）");
+                return Err("生成已取消".to_string());
+            }
         }
     }
     stage_skeletons.sort_by_key(|s| s.order);
@@ -459,6 +497,11 @@ pub async fn generate_roadmap(
     let total_task_jobs: usize = stage_skeletons.iter().map(|s| s.task_outlines.len()).sum();
     info!("");
     info!("═══ Layer 3: Task Content（{total_task_jobs} 个任务并行，上限 6）═══");
+
+    if state.gen_cancel.load(Ordering::SeqCst) != cancel_version {
+        info!("==> 生成已取消（进入任务内容前）");
+        return Err("生成已取消".to_string());
+    }
 
     let mut task_contents: Vec<TaskContent> = Vec::new();
     let mut content_handles = Vec::new();
@@ -516,9 +559,21 @@ pub async fn generate_roadmap(
         }
     }
 
-    for h in content_handles {
-        if let Ok(Ok(c)) = h.await {
-            task_contents.push(c);
+    let mut content_handles = content_handles.into_iter();
+    while let Some(h) = content_handles.next() {
+        tokio::select! {
+            res = h => {
+                if let Ok(Ok(c)) = res {
+                    task_contents.push(c);
+                }
+            }
+            _ = wait_cancelled(&state.gen_cancel, cancel_version) => {
+                for remaining in content_handles {
+                    remaining.abort();
+                }
+                info!("==> 生成已取消（任务内容）");
+                return Err("生成已取消".to_string());
+            }
         }
     }
     task_contents.sort_by_key(|c| (c.task_type.clone(), c.order));
@@ -614,10 +669,20 @@ pub async fn generate_roadmap(
             }
 
             let mut enriched_results: Vec<Result<Vec<crate::services::parallel::ResourceDetail>, String>> = vec![];
-            for h in enrich_handles {
-                match h.await {
-                    Ok(result) => enriched_results.push(result),
-                    Err(_) => enriched_results.push(Err("Join 错误".to_string())),
+            let mut enrich_handles = enrich_handles.into_iter();
+            while let Some(h) = enrich_handles.next() {
+                tokio::select! {
+                    res = h => match res {
+                        Ok(result) => enriched_results.push(result),
+                        Err(_) => enriched_results.push(Err("Join 错误".to_string())),
+                    },
+                    _ = wait_cancelled(&state.gen_cancel, cancel_version) => {
+                        for remaining in enrich_handles {
+                            remaining.abort();
+                        }
+                        info!("==> 生成已取消（资源搜索）");
+                        return Err("生成已取消".to_string());
+                    }
                 }
             }
 
@@ -647,6 +712,11 @@ pub async fn generate_roadmap(
                 "资源搜索完成，正在保存...",
             );
         }
+    }
+
+    if state.gen_cancel.load(Ordering::SeqCst) != cancel_version {
+        info!("==> 生成已取消，不写入数据库");
+        return Err("生成已取消".to_string());
     }
 
     // 7. Merge into DB models

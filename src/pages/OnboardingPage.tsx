@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react';
+import { useEffect, useRef, useState, type FC } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
@@ -7,7 +7,6 @@ import { toRoadmapRequest, validateTopic } from '../stores/useCreateRoadmapWizar
 import { ErrorState } from '../components/states';
 import {
   OnboardingProgress,
-  StepProvider,
   StepApiKey,
   StepTopic,
   StepPreferences,
@@ -18,27 +17,42 @@ import ManuscriptMark from '../components/manuscript/ManuscriptMark';
 const OnboardingPage: FC = () => {
   const navigate = useNavigate();
   const {
-    currentStep, provider, apiKey, topic, level, goal, weeklyHours,
-    nextStep, prevStep, markCompleted,
+    currentStep, apiKey, baseUrl, model, topic, level, goal, weeklyHours,
+    nextStep, prevStep, gotoStep, markCompleted,
   } = useOnboardingStore();
-  const { generateRoadmap, isGenerating, error, progress, reset: resetRoadmap } = useRoadmapStore();
+  const { generateRoadmap, isGenerating, progress, reset: resetRoadmap } = useRoadmapStore();
   const [skipConfirm, setSkipConfirm] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const leaving = useRef(false);
+
+  // 离开引导页时若生成仍在进行,主动取消,避免后台继续生成
+  useEffect(() => {
+    return () => {
+      if (useRoadmapStore.getState().isGenerating) {
+        leaving.current = true;
+        void useRoadmapStore.getState().cancelGeneration();
+      }
+    };
+  }, []);
 
   const canGoNext = (() => {
-    if (currentStep === 1) return !!provider;
-    if (currentStep === 2) return apiKey.trim().length > 0;
-    if (currentStep === 3) {
+    if (currentStep === 1) {
+      return apiKey.trim().length > 0 && baseUrl.trim().length > 0 && model.trim().length > 0;
+    }
+    if (currentStep === 2) {
       const r = validateTopic(topic);
       return r.valid && !r.error;
     }
-    if (currentStep === 4) return topic.trim().length > 0 && level && goal.trim().length > 0;
+    if (currentStep === 3) return topic.trim().length > 0 && level && goal.trim().length > 0;
     return true;
   })();
 
   const handleFinish = async () => {
     if (completing) return;
+    leaving.current = false;
     setCompleting(true);
+    setGenError(null);
     try {
       await useOnboardingStore.getState().saveApiConfig();
       const req = toRoadmapRequest({
@@ -54,14 +68,29 @@ const OnboardingPage: FC = () => {
       useOnboardingStore.setState({ createdRoadmapId: id });
       nextStep();
     } catch (err) {
-      /* swallow */
+      resetRoadmap();
+      if (!leaving.current) setGenError(String(err));
     } finally {
       setCompleting(false);
     }
   };
 
-  const handleSkip = () => {
+  const handlePrev = () => {
+    if (isGenerating || completing) {
+      leaving.current = true;
+      resetRoadmap();
+      void useRoadmapStore.getState().cancelGeneration();
+    }
+    prevStep();
+  };
+
+  const handleSkip = async () => {
     setSkipConfirm(false);
+    leaving.current = true;
+    if (isGenerating || completing) {
+      resetRoadmap();
+      await useRoadmapStore.getState().cancelGeneration();
+    }
     markCompleted();
     navigate('/', { replace: true });
   };
@@ -120,7 +149,7 @@ const OnboardingPage: FC = () => {
   }
 
   // ============ 完成章 ============
-  if ((currentStep as number) === 5) {
+  if ((currentStep as number) === 4) {
     return (
       <div className="h-full flex flex-col items-center justify-center px-8 relative overflow-hidden">
         <div
@@ -141,7 +170,7 @@ const OnboardingPage: FC = () => {
     <div className="h-full flex flex-col overflow-hidden">
       <header className="flex-shrink-0 px-10 pt-6 pb-3 flex items-center justify-between">
         <button
-          onClick={prevStep}
+          onClick={handlePrev}
           className="flex items-center gap-2 font-display italic text-sm text-ink-fade hover:text-seal-500 transition-colors group"
         >
           <ArrowLeft size={15} className="transition-transform group-hover:-translate-x-1" />
@@ -164,21 +193,9 @@ const OnboardingPage: FC = () => {
         <OnboardingProgress currentStep={currentStep} />
 
         <div className="max-w-2xl mx-auto">
-          {error && (
-            <div className="mb-6">
-              <ErrorState
-                variant="card"
-                level="api"
-                error={error}
-                onRetry={() => { resetRoadmap(); handleFinish(); }}
-              />
-            </div>
-          )}
-
-          {currentStep === 1 && <StepProvider />}
-          {currentStep === 2 && <StepApiKey />}
-          {currentStep === 3 && <StepTopic />}
-          {currentStep === 4 && <StepPreferences />}
+          {currentStep === 1 && <StepApiKey />}
+          {currentStep === 2 && <StepTopic />}
+          {currentStep === 3 && <StepPreferences />}
         </div>
       </div>
 
@@ -201,9 +218,9 @@ const OnboardingPage: FC = () => {
           )}
           <div className="flex items-center justify-between">
             <span className="font-display italic text-xs text-ink-fade">
-              {currentStep < 4 ? '可随时退回' : '末章 · 落笔即生成'}
+              {currentStep < 3 ? '可随时退回' : '末章 · 落笔即生成'}
             </span>
-            {currentStep < 4 ? (
+            {currentStep < 3 ? (
               <button
                 onClick={nextStep}
                 disabled={!canGoNext}
@@ -244,6 +261,42 @@ const OnboardingPage: FC = () => {
       </footer>
 
       {skipConfirm && <SkipConfirm onCancel={() => setSkipConfirm(false)} onConfirm={handleSkip} />}
+      {genError && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 dark:bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setGenError(null)}
+        >
+          <div className="w-full max-w-md animate-ink-spread" onClick={(e) => e.stopPropagation()}>
+            <ErrorState
+              variant="card"
+              level="api"
+              title="落 墨 受 阻"
+              description="AI 未 能 完 成 此 次 拟 纲。可 回 到 配 钥 检 查 配 置,或 直 接 重 试。"
+              error={genError}
+              actions={[
+                { label: '先 收 起', variant: 'ghost', onClick: () => setGenError(null) },
+                {
+                  label: '回 到 配 钥',
+                  variant: 'secondary',
+                  onClick: () => {
+                    setGenError(null);
+                    gotoStep(1);
+                  },
+                },
+                {
+                  label: '重 试',
+                  variant: 'primary',
+                  onClick: () => {
+                    setGenError(null);
+                    resetRoadmap();
+                    handleFinish();
+                  },
+                },
+              ]}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
