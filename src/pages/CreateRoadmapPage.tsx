@@ -155,9 +155,10 @@ export default function CreateRoadmapPage() {
                   (step.id === 1 && (!progress || progress.type === 'started' || progress.type === 'outline_complete')) ||
                   (step.id === 2 && (progress?.type === 'stage_started' || progress?.type === 'stage_completed')) ||
                   (step.id === 3 && (progress?.type === 'stage_completed' && (progress.current ?? 0) > 0)) ||
-                  (step.id === 4 && progress?.type === 'completed');
+                  (step.id === 4 && (progress?.type === 'enriching' || progress?.type === 'enrich_done' || progress?.type === 'completed'));
                 const isDone =
                   step.id < (progress?.type === 'completed' ? 5
+                    : progress?.type === 'enriching' || progress?.type === 'enrich_done' ? 4
                     : progress?.type === 'stage_completed' ? 3
                     : progress?.type === 'outline_complete' ? 2 : 1);
                 return (
@@ -194,6 +195,7 @@ export default function CreateRoadmapPage() {
                 {!progress || progress.type === 'started' ? '第 一 阶 段'
                   : progress.type === 'outline_complete' ? '第 二 阶 段'
                   : progress.type === 'stage_started' || progress.type === 'stage_completed' ? '第 三 阶 段'
+                  : progress.type === 'enriching' || progress.type === 'enrich_done' ? '第 四 阶 段'
                   : progress.type === 'completed' ? '写 入 完 毕' : '处 理 中'}
               </div>
               <h4 className="font-display text-base font-semibold text-ink-700 dark:text-ink-100 mb-1">
@@ -201,6 +203,8 @@ export default function CreateRoadmapPage() {
                   ? 'AI 正 在 规 划 学 习 路 径'
                   : progress.type === 'outline_complete'
                     ? '大 纲 已 毕,正 在 细 化'
+                    : progress.type === 'enriching' || progress.type === 'enrich_done'
+                      ? '正 在 搜 索 真 实 学 习 资 源'
                     : '正 在 并 行 生 成 任 务 内 容'}
               </h4>
               <p className="font-display italic text-xs text-ink-fade leading-relaxed">
@@ -208,6 +212,8 @@ export default function CreateRoadmapPage() {
                   ? '分 析 主 题 · 评 估 难 度 · 设 计 阶 段 划 分'
                   : progress.type === 'outline_complete'
                     ? `已 规 划 ${progress.total} 个 阶 段,正 在 为 每 个 阶 段 生 成 任 务 列 表`
+                    : progress.type === 'enriching' || progress.type === 'enrich_done'
+                      ? progress.message
                     : progress.stage_title
                       ? `当 前 阶 段 · ${progress.stage_title}`
                       : 'AI 正 在 为 每 个 任 务 编 写 详 细 内 容、推 荐 资 源 和 生 成 记 忆 卡 片'}
@@ -227,7 +233,7 @@ export default function CreateRoadmapPage() {
                   </div>
                 </div>
                 <div className="flex justify-between font-mono text-[10px] text-ink-fade">
-                  <span>{progress.current}/{progress.total} 阶 段</span>
+                  <span>{progress.current}/{progress.total} {progress.type === 'outline_complete' ? '阶 段' : '进 度'}</span>
                 </div>
               </div>
             )}

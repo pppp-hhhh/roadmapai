@@ -16,6 +16,7 @@ use crate::AppState;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use tauri::{Emitter, State};
 use tracing::{error, info, warn};
@@ -369,6 +370,8 @@ pub async fn generate_roadmap(
 
     let mut stage_skeletons: Vec<StageOutlineOnly> = Vec::new();
     let mut skeleton_handles: Vec<tokio::task::JoinHandle<Result<StageOutlineOnly, String>>> = Vec::new();
+    let skeleton_done = Arc::new(AtomicUsize::new(0));
+    let total_skeletons = total;
     for outline in outlines {
         let sem = semaphore.clone();
         let client = client.clone();
@@ -376,6 +379,8 @@ pub async fn generate_roadmap(
         let model = model.clone();
         let api_key = api_key.clone();
         let provider_type_t = provider_type.clone();
+        let app = app_handle.clone();
+        let done_counter = skeleton_done.clone();
         let level = params.level.clone();
         let topic = params.topic.clone();
         let order = outline.order;
@@ -386,6 +391,10 @@ pub async fn generate_roadmap(
             let _permit = sem.acquire().await.expect("信号量获取失败");
             let t0 = Instant::now();
             info!("  [L2-阶段{}] 启动", order);
+            emit_roadmap_progress(
+                &app, "stage_started", 0, total_skeletons, Some(&title),
+                &format!("正在生成第 {order}/{total_skeletons} 阶段骨架 · {title}"),
+            );
 
             let prompt = build_stage_outline_only_prompt(&topic, &level, order, &title, &brief);
             let raw = match call_ai(
@@ -397,24 +406,42 @@ pub async fn generate_roadmap(
                 Err(e) => { warn!("  [L2-阶段{}] ✘ AI 调用失败：{}", order, e); None }
             };
 
-            if let Some(raw) = raw {
+            let result = if let Some(raw) = raw {
                 match parse_stage_outline_only_response(&raw, order, &title) {
                     Ok(mut s) => {
                         s.title = title.clone();
                         info!("  [L2-阶段{}] ✔ {} 任务骨架 | {:.1}s", order, s.task_outlines.len(), t0.elapsed().as_secs_f64());
-                        return Ok(s);
+                        Ok(s)
                     }
-                    Err(e) => warn!("  [L2-阶段{}] ✘ 解析失败：{}", order, e),
+                    Err(e) => {
+                        warn!("  [L2-阶段{}] ✘ 解析失败：{}", order, e);
+                        Err(format!("解析失败：{}", e))
+                    }
                 }
-            }
-            // Fallback: empty task outlines, aggregation will make it a proper fallback stage
-            warn!("  [L2-阶段{}] ⚠ AI 生成失败，阶段将标记为占位", order);
-            Ok(StageOutlineOnly {
-                order,
-                title: title.clone(),
-                description: format!("本阶段目标：{}", brief),
-                task_outlines: vec![],
-            })
+            } else {
+                Err("AI 调用失败".to_string())
+            };
+
+            let result = match result {
+                Ok(s) => s,
+                Err(e) => {
+                    // Fallback: empty task outlines, aggregation will make it a proper fallback stage
+                    warn!("  [L2-阶段{}] ⚠ AI 生成失败（{}），阶段将标记为占位", order, e);
+                    StageOutlineOnly {
+                        order,
+                        title: title.clone(),
+                        description: format!("本阶段目标：{}", brief),
+                        task_outlines: vec![],
+                    }
+                }
+            };
+
+            let done = done_counter.fetch_add(1, Ordering::Relaxed) + 1;
+            emit_roadmap_progress(
+                &app, "stage_completed", done, total_skeletons, Some(&title),
+                &format!("阶段骨架 {done}/{total_skeletons} · {title}"),
+            );
+            Ok(result)
         }));
     }
 
@@ -435,6 +462,7 @@ pub async fn generate_roadmap(
 
     let mut task_contents: Vec<TaskContent> = Vec::new();
     let mut content_handles = Vec::new();
+    let task_done = Arc::new(AtomicUsize::new(0));
     for stage in &stage_skeletons {
         for task in &stage.task_outlines {
             let sem = semaphore.clone();
@@ -443,6 +471,8 @@ pub async fn generate_roadmap(
             let model = model.clone();
             let api_key = api_key.clone();
             let provider_type_t = provider_type.clone();
+            let app = app_handle.clone();
+            let done_counter = task_done.clone();
             let stage_title = stage.title.clone();
             let stage_desc = stage.description.clone();
             let task_title = task.title.clone();
@@ -462,13 +492,26 @@ pub async fn generate_roadmap(
                     Err(e) => { warn!("  [L3-任务{}] ✘ AI 调用失败：{}", order, e); None }
                 };
 
-                if let Some(raw) = raw {
-                    if let Ok(c) = parse_task_content_response(&raw, order, &task_title, &task_type) {
-                        info!("  [L3-任务{}] ✔ {:.1}s", order, t0.elapsed().as_secs_f64());
-                        return Ok(c);
-                    }
-                }
-                Err(format!("L3 任务{}失败", order))
+                let result = match raw {
+                    Some(raw) => match parse_task_content_response(&raw, order, &task_title, &task_type) {
+                        Ok(c) => {
+                            info!("  [L3-任务{}] ✔ {:.1}s", order, t0.elapsed().as_secs_f64());
+                            Ok(c)
+                        }
+                        Err(e) => {
+                            warn!("  [L3-任务{}] ✘ 解析失败：{}", order, e);
+                            Err(format!("解析失败：{}", e))
+                        }
+                    },
+                    None => Err("AI 调用失败".to_string()),
+                };
+
+                let done = done_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                emit_roadmap_progress(
+                    &app, "stage_completed", done, total_task_jobs, Some(&task_title),
+                    &format!("任务内容 {done}/{total_task_jobs} · {task_title}"),
+                );
+                result
             }));
         }
     }

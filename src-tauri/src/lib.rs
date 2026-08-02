@@ -14,27 +14,37 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 pub struct AppState {
     pub db: Arc<Mutex<Database>>,
+    _log_guard: tracing_appender::non_blocking::WorkerGuard,
 }
 
-fn setup_logging() {
+fn setup_logging(app: &tauri::App) -> tracing_appender::non_blocking::WorkerGuard {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
+    let log_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let _ = std::fs::create_dir_all(&log_dir);
+    let file = tracing_appender::rolling::daily(&log_dir, "roadmapai.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file);
+
     tracing_subscriber::registry()
-        .with(fmt::layer())
+        .with(fmt::layer().with_writer(std::io::stdout))
+        .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
         .with(filter)
         .init();
 
-    tracing::info!("AI 学习路线规划器启动中...");
+    tracing::info!("AI 学习路线规划器启动中，日志目录：{}", log_dir.display());
+    guard
 }
 
 pub fn run() {
-    setup_logging();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            let log_guard = setup_logging(app);
             let app_handle = app.handle().clone();
 
             tauri::async_runtime::block_on(async {
@@ -44,6 +54,7 @@ pub fn run() {
 
                 let state = AppState {
                     db: Arc::new(Mutex::new(db)),
+                    _log_guard: log_guard,
                 };
 
                 app_handle.manage(state);

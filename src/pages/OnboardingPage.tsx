@@ -21,7 +21,7 @@ const OnboardingPage: FC = () => {
     currentStep, provider, apiKey, topic, level, goal, weeklyHours,
     nextStep, prevStep, markCompleted,
   } = useOnboardingStore();
-  const { generateRoadmap, isGenerating, error, reset: resetRoadmap } = useRoadmapStore();
+  const { generateRoadmap, isGenerating, error, progress, reset: resetRoadmap } = useRoadmapStore();
   const [skipConfirm, setSkipConfirm] = useState(false);
   const [completing, setCompleting] = useState(false);
 
@@ -183,46 +183,63 @@ const OnboardingPage: FC = () => {
       </div>
 
       <footer className="flex-shrink-0 px-10 py-6 border-t border-ink-200 dark:border-ink-700/40 bg-ink-50/60 dark:bg-night-100/60">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <span className="font-display italic text-xs text-ink-fade">
-            {currentStep < 4 ? '可随时退回' : '末章 · 落笔即生成'}
-          </span>
-          {currentStep < 4 ? (
-            <button
-              onClick={nextStep}
-              disabled={!canGoNext}
-              className="group flex items-center gap-3 px-6 py-3
-                bg-ink-700 dark:bg-seal-500 hover:bg-seal-500 dark:hover:bg-seal-400
-                text-ink-50 transition-all font-display text-sm
-                disabled:opacity-30 disabled:cursor-not-allowed
-                border-2 border-ink-800 dark:border-seal-600"
-            >
-              <span>续 写</span>
-              <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
-            </button>
-          ) : (
-            <button
-              onClick={handleFinish}
-              disabled={!canGoNext || completing || isGenerating}
-              className="group flex items-center gap-3 px-7 py-3
-                bg-seal-500 hover:bg-seal-400 text-ink-50
-                transition-all font-display text-sm
-                disabled:opacity-40 disabled:cursor-not-allowed
-                border-2 border-seal-600"
-            >
-              {completing || isGenerating ? (
-                <>
-                  <Loader2 size={15} className="animate-spin" />
-                  <span>AI 落 墨 中…</span>
-                </>
-              ) : (
-                <>
-                  <span>落 笔 · 拟 写 纲 要</span>
-                  <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
-                </>
+        <div className="max-w-2xl mx-auto">
+          {(completing || isGenerating) && progress && (
+            <div className="w-full mb-4">
+              <p className="font-display italic text-xs text-seal-500 mb-1.5 truncate">
+                {progress.message}
+              </p>
+              {progress.total > 0 && (
+                <div className="w-full h-1 bg-ink-200 dark:bg-ink-700 overflow-hidden">
+                  <div
+                    className="h-full bg-seal-400 transition-all duration-1000 ease-out"
+                    style={{ width: `${Math.max(Math.round((progress.current / progress.total) * 100), 4)}%` }}
+                  />
+                </div>
               )}
-            </button>
+            </div>
           )}
+          <div className="flex items-center justify-between">
+            <span className="font-display italic text-xs text-ink-fade">
+              {currentStep < 4 ? '可随时退回' : '末章 · 落笔即生成'}
+            </span>
+            {currentStep < 4 ? (
+              <button
+                onClick={nextStep}
+                disabled={!canGoNext}
+                className="group flex items-center gap-3 px-6 py-3
+                  bg-ink-700 dark:bg-seal-500 hover:bg-seal-500 dark:hover:bg-seal-400
+                  text-ink-50 transition-all font-display text-sm
+                  disabled:opacity-30 disabled:cursor-not-allowed
+                  border-2 border-ink-800 dark:border-seal-600"
+              >
+                <span>续 写</span>
+                <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
+              </button>
+            ) : (
+              <button
+                onClick={handleFinish}
+                disabled={!canGoNext || completing || isGenerating}
+                className="group flex items-center gap-3 px-7 py-3
+                  bg-seal-500 hover:bg-seal-400 text-ink-50
+                  transition-all font-display text-sm
+                  disabled:opacity-40 disabled:cursor-not-allowed
+                  border-2 border-seal-600"
+              >
+                {completing || isGenerating ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    <span>AI 落 墨 中…</span>
+                  </>
+                ) : (
+                  <>
+                    <span>落 笔 · 拟 写 纲 要</span>
+                    <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </footer>
 

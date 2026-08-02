@@ -110,7 +110,7 @@ export interface QuizResult {
 }
 
 export interface ProgressEvent {
-  type: 'started' | 'outline_complete' | 'stage_started' | 'stage_completed' | 'stage_failed' | 'completed' | 'failed';
+  type: 'started' | 'outline_complete' | 'stage_started' | 'stage_completed' | 'stage_failed' | 'enriching' | 'enrich_done' | 'completed' | 'failed';
   current: number;
   total: number;
   stage_title?: string;
