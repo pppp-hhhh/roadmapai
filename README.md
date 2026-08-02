@@ -131,7 +131,7 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 
 ```bash
 # 克隆仓库
-git clone https://github.com/YOUR_USERNAME/roadmapai.git
+git clone https://github.com/pppp-hhhh/roadmapai.git
 cd roadmapai
 
 # 安装前端依赖（Rust 依赖会在首次 tauri dev/build 时自动下载）
