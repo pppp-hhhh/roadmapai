@@ -1,0 +1,85 @@
+name: Build Desktop App
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: RoadmapAI-windows
+            bundle_path: src-tauri/target/release/bundle/
+            build_args: ""
+          - os: macos-latest
+            artifact: RoadmapAI-macos-universal
+            bundle_path: src-tauri/target/universal-apple-darwin/release/bundle/
+            build_args: "-- --target universal-apple-darwin --bundles app,dmg"
+          - os: ubuntu-latest
+            artifact: RoadmapAI-linux
+            bundle_path: src-tauri/target/release/bundle/
+            build_args: "-- --bundles deb,appimage"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS universal targets
+        if: matrix.os == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri bundles
+        run: npm run tauri build ${{ matrix.build_args }}
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.bundle_path }}
+          if-no-files-found: error
+
+  release:
+    name: Create draft release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: RoadmapAI ${{ github.ref_name }}
+          body: |
+            Windows / macOS / Linux 安装包见下方 assets，发布前请补充版本说明。
+          draft: true
+          files: release-assets/**
