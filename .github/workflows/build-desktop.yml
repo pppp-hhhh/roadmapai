@@ -15,16 +15,22 @@ jobs:
         include:
           - os: windows-latest
             artifact: RoadmapAI-windows
-            bundle_path: src-tauri/target/release/bundle/
             build_args: ""
+            upload_path: |
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/msi/*.msi
           - os: macos-latest
             artifact: RoadmapAI-macos-universal
-            bundle_path: src-tauri/target/universal-apple-darwin/release/bundle/
             build_args: "-- --target universal-apple-darwin --bundles app,dmg"
+            upload_path: |
+              src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+              src-tauri/target/universal-apple-darwin/release/bundle/dmg/RoadmapAI-macos-universal.zip
           - os: ubuntu-latest
             artifact: RoadmapAI-linux
-            bundle_path: src-tauri/target/release/bundle/
             build_args: "-- --bundles deb,appimage"
+            upload_path: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -54,11 +60,17 @@ jobs:
       - name: Build Tauri bundles
         run: npm run tauri build ${{ matrix.build_args }}
 
+      - name: Package macOS app
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd src-tauri/target/universal-apple-darwin/release/bundle/macos
+          zip -q -r ../dmg/RoadmapAI-macos-universal.zip RoadmapAI.app
+
       - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.bundle_path }}
+          path: ${{ matrix.upload_path }}
           if-no-files-found: error
 
   release:
