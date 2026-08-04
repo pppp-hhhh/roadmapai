@@ -1,36 +1,29 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, X } from 'lucide-react';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
-import {
-  useCreateRoadmapWizardStore,
-  canProceedFromStep,
-  toRoadmapRequest,
-} from '../stores/useCreateRoadmapWizardStore';
-import {
-  WizardProgress,
-  StepTopicLevel,
-  StepGoalPreference,
-} from '../components/wizard';
+import { useIntakeStore } from '../stores/useIntakeStore';
+import { IntakeFlow } from '../components/wizard';
 import { ErrorState } from '../components/states';
 import { roman } from '../components/manuscript/roman';
+import type { RoadmapRequest } from '../types';
 
 export default function CreateRoadmapPage() {
   const navigate = useNavigate();
   const { generateRoadmap, isGenerating, error, progress, reset: resetRoadmap } = useRoadmapStore();
-  const wizard = useCreateRoadmapWizardStore();
-  const {
-    currentStep, topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject,
-    nextStep, prevStep, gotoStep, reset,
-  } = wizard;
+  const intake = useIntakeStore();
+  const lastRequestRef = useRef<RoadmapRequest | null>(null);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (topic.trim()) { e.preventDefault(); e.returnValue = ''; }
+      if (intake.topic.trim() || useRoadmapStore.getState().isGenerating) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [topic]);
+  }, [intake.topic]);
 
   // 离开创建页时若生成仍在进行,主动取消,避免后台继续生成
   useEffect(() => {
@@ -41,16 +34,21 @@ export default function CreateRoadmapPage() {
     };
   }, []);
 
-  const canGo = canProceedFromStep(currentStep, { topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject });
-
-  const handleSubmit = async () => {
-    if (!canProceedFromStep(4, { topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject })) return;
+  const handleGenerate = async (params: RoadmapRequest) => {
+    lastRequestRef.current = params;
     try {
-      const req = toRoadmapRequest({ topic, level, goal, goalDetail, weeklyHours, difficulty, includeProject });
-      const id = await generateRoadmap(req);
-      reset();
+      const id = await generateRoadmap(params);
+      intake.reset();
       navigate(`/roadmap/${id}`);
-    } catch { /* store handles error */ }
+    } catch {
+      // store 负责展示错误
+    }
+  };
+
+  const handleRetry = () => {
+    if (!lastRequestRef.current) return;
+    resetRoadmap();
+    void handleGenerate(lastRequestRef.current);
   };
 
   const isOutlinePhase = !progress || progress.type === 'started' || progress.type === 'outline_complete';
@@ -58,7 +56,7 @@ export default function CreateRoadmapPage() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="max-w-2xl mx-auto px-12 py-10">
+      <div className="max-w-3xl mx-auto px-12 py-10">
         <button
           onClick={() => navigate('/')}
           className="flex items-center gap-2 font-display italic text-sm text-ink-fade hover:text-seal-500 mb-6 group transition-colors"
@@ -68,71 +66,29 @@ export default function CreateRoadmapPage() {
         </button>
 
         <header className="mb-8 animate-ink-spread">
-          <div className="smallcaps mb-3">第 二 章 · 拟 纲</div>
+          <div className="smallcaps mb-3">第 二 章 · 访 谈</div>
           <h1 className="font-display text-5xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-none">
             <span className="italic text-seal-500">创</span>建 学 习 路 线
           </h1>
           <p className="font-display italic text-base text-ink-fade dark:text-ink-soft mt-3">
-            4 步 引 导,让 AI 更 懂 你
+            几 轮 对 话,让 AI 更 懂 你
           </p>
           <div className="rule-gilt mt-5 max-w-xs" />
         </header>
 
-        <WizardProgress currentStep={currentStep} onStepClick={gotoStep} />
-
         {error && (
           <div className="my-6">
-            <ErrorState variant="card" level="api" error={error}
-              onRetry={() => { resetRoadmap(); handleSubmit(); }} />
+            <ErrorState
+              variant="card"
+              level="api"
+              error={error}
+              onRetry={handleRetry}
+            />
           </div>
         )}
 
-        <div className="manuscript-card p-7 mt-6">
-          {currentStep <= 2 ? <StepTopicLevel step={currentStep as 1 | 2} /> : <StepGoalPreference step={currentStep as 3 | 4} />}
-        </div>
-
-        {/* 操作栏 */}
-        <div className="mt-6 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={prevStep}
-            disabled={currentStep === 1}
-            className="flex items-center gap-2 px-4 py-2.5 font-display text-sm
-              text-ink-fade hover:text-seal-500 hover:bg-ink-100/50 dark:hover:bg-night-300/50
-              disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
-            <ArrowLeft size={16} />
-            <span>上 一 步</span>
-          </button>
-
-          {currentStep < 4 ? (
-            <button
-              type="button"
-              onClick={nextStep}
-              disabled={!canGo}
-              className="flex items-center gap-2 px-6 py-2.5
-                bg-ink-700 dark:bg-seal-500 hover:bg-seal-500 dark:hover:bg-seal-400
-                text-ink-50 transition-colors font-display text-sm
-                border-2 border-ink-800 dark:border-seal-600
-                disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <span>继 续</span>
-              <ArrowRight size={16} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!canGo || isGenerating}
-              className="flex items-center gap-2 px-6 py-2.5
-                bg-seal-500 hover:bg-seal-400 text-ink-50
-                transition-colors font-display text-sm border-2 border-seal-600
-                disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Sparkles size={16} />
-              <span>落 笔 · 拟 写 纲 要</span>
-            </button>
-          )}
+        <div className="mt-6">
+          <IntakeFlow onConfirm={handleGenerate} generating={isGenerating} />
         </div>
       </div>
 
@@ -152,13 +108,12 @@ export default function CreateRoadmapPage() {
               {roman(1)} — {roman(4)} 章 生 成
             </h3>
 
-            {/* 4 阶段进度 — 罗马章号 */}
             <div className="flex items-center justify-center gap-2 mb-8">
               {[
-                { id: 1, label: '大 纲',     icon: '✦' },
-                { id: 2, label: '骨 架',     icon: '§' },
-                { id: 3, label: '内 容',     icon: '✎' },
-                { id: 4, label: '完 成',     icon: '✦' },
+                { id: 1, label: '大 纲', icon: '✦' },
+                { id: 2, label: '骨 架', icon: '§' },
+                { id: 3, label: '内 容', icon: '✎' },
+                { id: 4, label: '完 成', icon: '✦' },
               ].map((step) => {
                 const isActive =
                   (step.id === 1 && (!progress || progress.type === 'started' || progress.type === 'outline_complete')) ||
@@ -225,7 +180,7 @@ export default function CreateRoadmapPage() {
                       ? progress.message
                     : progress.stage_title
                       ? `当 前 阶 段 · ${progress.stage_title}`
-                      : 'AI 正 在 为 每 个 任 务 编 写 详 细 内 容、推 荐 资 源 和 生 成 记 忆 卡 片'}
+                      : 'AI 正 在 为 每 个 任 务 编 写 详 细 内 容 与 推 荐 资 源'}
               </p>
             </div>
 

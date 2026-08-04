@@ -1,30 +1,37 @@
 import { useEffect, useRef, useState, type FC } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
-import { useOnboardingStore } from '../stores/useOnboardingStore';
+import { useOnboardingStore, type OnboardingLevel } from '../stores/useOnboardingStore';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
-import { toRoadmapRequest, validateTopic } from '../stores/useCreateRoadmapWizardStore';
 import { ErrorState } from '../components/states';
 import {
   OnboardingProgress,
   StepApiKey,
-  StepTopic,
-  StepPreferences,
   OnboardingComplete,
 } from '../components/onboarding';
+import { IntakeFlow } from '../components/wizard';
 import ManuscriptMark from '../components/manuscript/ManuscriptMark';
+import type { RoadmapRequest } from '../types';
 
 const OnboardingPage: FC = () => {
   const navigate = useNavigate();
   const {
-    currentStep, apiKey, baseUrl, model, topic, level, goal, weeklyHours,
-    nextStep, prevStep, gotoStep, markCompleted,
+    currentStep,
+    apiKey,
+    baseUrl,
+    model,
+    nextStep,
+    prevStep,
+    gotoStep,
+    markCompleted,
+    setField,
   } = useOnboardingStore();
   const { generateRoadmap, isGenerating, progress, reset: resetRoadmap } = useRoadmapStore();
   const [skipConfirm, setSkipConfirm] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const leaving = useRef(false);
+  const lastRequestRef = useRef<RoadmapRequest | null>(null);
 
   // 离开引导页时若生成仍在进行,主动取消,避免后台继续生成
   useEffect(() => {
@@ -36,35 +43,23 @@ const OnboardingPage: FC = () => {
     };
   }, []);
 
-  const canGoNext = (() => {
-    if (currentStep === 1) {
-      return apiKey.trim().length > 0 && baseUrl.trim().length > 0 && model.trim().length > 0;
-    }
-    if (currentStep === 2) {
-      const r = validateTopic(topic);
-      return r.valid && !r.error;
-    }
-    if (currentStep === 3) return topic.trim().length > 0 && level && goal.trim().length > 0;
-    return true;
-  })();
+  const canGoNext =
+    currentStep === 1
+      ? apiKey.trim().length > 0 && baseUrl.trim().length > 0 && model.trim().length > 0
+      : true;
 
-  const handleFinish = async () => {
+  const handleInterviewConfirm = async (params: RoadmapRequest) => {
     if (completing) return;
+    lastRequestRef.current = params;
     leaving.current = false;
     setCompleting(true);
     setGenError(null);
     try {
       await useOnboardingStore.getState().saveApiConfig();
-      const req = toRoadmapRequest({
-        topic,
-        level: level as any,
-        goal: 'custom',
-        goalDetail: goal,
-        weeklyHours,
-        difficulty: '适中',
-        includeProject: true,
-      });
-      const id = await generateRoadmap(req);
+      setField('topic', params.topic);
+      setField('goal', params.goal);
+      setField('level', params.level as OnboardingLevel);
+      const id = await generateRoadmap(params);
       useOnboardingStore.setState({ createdRoadmapId: id });
       nextStep();
     } catch (err) {
@@ -114,10 +109,10 @@ const OnboardingPage: FC = () => {
             欢迎,未来的<span className="italic text-seal-500">学者</span>
           </h1>
           <p className="font-display italic text-lg text-ink-fade dark:text-ink-soft leading-relaxed mb-3 max-w-lg mx-auto">
-            略备四章,即可开启你的研习之旅。
+            略备两章,即可开启你的研习之旅。
           </p>
           <p className="font-display italic text-base text-ink-fade/80 dark:text-ink-soft/80 leading-relaxed mb-10 max-w-md mx-auto">
-            从一管墨、一方砚、一册经卷开始。
+            一管墨、一方砚,再加一段与 AI 的访谈。
           </p>
 
           <button
@@ -149,7 +144,7 @@ const OnboardingPage: FC = () => {
   }
 
   // ============ 完成章 ============
-  if ((currentStep as number) === 4) {
+  if (currentStep >= 3) {
     return (
       <div className="h-full flex flex-col items-center justify-center px-8 relative overflow-hidden">
         <div
@@ -165,7 +160,7 @@ const OnboardingPage: FC = () => {
     );
   }
 
-  // ============ 四章主流程 ============
+  // ============ 两章主流程 ============
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <header className="flex-shrink-0 px-10 pt-6 pb-3 flex items-center justify-between">
@@ -194,8 +189,13 @@ const OnboardingPage: FC = () => {
 
         <div className="max-w-2xl mx-auto">
           {currentStep === 1 && <StepApiKey />}
-          {currentStep === 2 && <StepTopic />}
-          {currentStep === 3 && <StepPreferences />}
+          {currentStep === 2 && (
+            <IntakeFlow
+              compact
+              onConfirm={handleInterviewConfirm}
+              generating={completing || isGenerating}
+            />
+          )}
         </div>
       </div>
 
@@ -218,9 +218,9 @@ const OnboardingPage: FC = () => {
           )}
           <div className="flex items-center justify-between">
             <span className="font-display italic text-xs text-ink-fade">
-              {currentStep < 3 ? '可随时退回' : '末章 · 落笔即生成'}
+              {currentStep === 1 ? '可随时退回' : '访谈结束后,确认画像即可落墨'}
             </span>
-            {currentStep < 3 ? (
+            {currentStep === 1 ? (
               <button
                 onClick={nextStep}
                 disabled={!canGoNext}
@@ -234,27 +234,10 @@ const OnboardingPage: FC = () => {
                 <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
               </button>
             ) : (
-              <button
-                onClick={handleFinish}
-                disabled={!canGoNext || completing || isGenerating}
-                className="group flex items-center gap-3 px-7 py-3
-                  bg-seal-500 hover:bg-seal-400 text-ink-50
-                  transition-all font-display text-sm
-                  disabled:opacity-40 disabled:cursor-not-allowed
-                  border-2 border-seal-600"
-              >
-                {completing || isGenerating ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" />
-                    <span>AI 落 墨 中…</span>
-                  </>
-                ) : (
-                  <>
-                    <span>落 笔 · 拟 写 纲 要</span>
-                    <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                {isGenerating && <Loader2 size={15} className="animate-spin text-seal-500" />}
+                <span className="font-display text-xs text-seal-500">{isGenerating ? 'AI 落 墨 中…' : '访 谈 问 答'}</span>
+              </div>
             )}
           </div>
         </div>
@@ -289,7 +272,8 @@ const OnboardingPage: FC = () => {
                   onClick: () => {
                     setGenError(null);
                     resetRoadmap();
-                    handleFinish();
+                    const last = lastRequestRef.current;
+                    if (last) void handleInterviewConfirm(last);
                   },
                 },
               ]}

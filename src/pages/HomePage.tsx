@@ -47,7 +47,7 @@ export default function HomePage() {
           roadmapData?.stages?.forEach((stage) => {
             stage.tasks?.forEach((task) => { total++; if (task.is_completed) completed++; });
           });
-          const nextStage = roadmapData?.stages?.find(s => !s.isLocked)?.name;
+          const nextStage = roadmapData?.stages?.[0]?.name;
           counts[roadmap.id] = { total, completed, nextStage };
         } catch {
           counts[roadmap.id] = { total: 0, completed: 0, nextStage: undefined };

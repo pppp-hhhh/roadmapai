@@ -13,13 +13,12 @@ export interface WizardData {
   level: Level;
   goal: GoalTemplate;
   goalDetail: string;
-  weeklyHours: number;
   difficulty: Difficulty;
-  includeProject: boolean;
+  profile?: string;
 }
 
 export const GOAL_TEMPLATES: { key: GoalTemplate; label: string; placeholder: string }[] = [
-  { key: 'job', label: '求职面试', placeholder: '如：3 个月内拿到前端岗 offer' },
+  { key: 'job', label: '求职面试', placeholder: '如：3 个月内拿到目标岗位的 offer' },
   { key: 'exam', label: '期末复习', placeholder: '如：本学期通过 XXX 考试' },
   { key: 'project', label: '项目实战', placeholder: '如：3 个月内做出可上线的 MVP' },
   { key: 'interest', label: '个人兴趣', placeholder: '如：系统了解、不赶进度' },
@@ -41,9 +40,7 @@ const initialData: WizardData = {
   level: '入门',
   goal: 'interest',
   goalDetail: '',
-  weeklyHours: 5,
   difficulty: '适中',
-  includeProject: true,
 };
 
 export const useCreateRoadmapWizardStore = create<WizardState>()(
@@ -75,9 +72,8 @@ export const useCreateRoadmapWizardStore = create<WizardState>()(
         level: s.level,
         goal: s.goal,
         goalDetail: s.goalDetail,
-        weeklyHours: s.weeklyHours,
         difficulty: s.difficulty,
-        includeProject: s.includeProject,
+        profile: s.profile,
         currentStep: s.currentStep,
       }),
     }
@@ -94,7 +90,7 @@ export interface ValidateTopicResult {
   error?: string;
 }
 
-const TOO_VAGUE = ['AI', '编程', '学习', '技术', '数学', '英语', '前端', '后端', '开发'];
+const TOO_VAGUE = ['AI', '编程', '学习', '技术'];
 
 export function validateTopic(topic: string): ValidateTopicResult {
   const t = topic.trim();
@@ -130,12 +126,12 @@ export function canProceedFromStep(
     return true;
   }
   if (step === 4) {
-    return data.weeklyHours > 0 && !!data.difficulty;
+    return !!data.difficulty;
   }
   return true;
 }
 
-/** 把 wizard 字段拼回 v1.0 的 RoadmapRequest,后端零改动 */
+/** 把 wizard 字段拼成 RoadmapRequest,后端接口保持不变 */
 export function toRoadmapRequest(data: WizardData): RoadmapRequest {
   const goalText = (() => {
     const t = GOAL_TEMPLATES.find((g) => g.key === data.goal);
@@ -147,14 +143,11 @@ export function toRoadmapRequest(data: WizardData): RoadmapRequest {
     return t.label;
   })();
 
-  const difficultyText = `${data.difficulty} · 每周约 ${data.weeklyHours} 小时${
-    data.includeProject ? ' · 含项目实战' : ''
-  }`;
-
   return {
     topic: data.topic.trim(),
     level: data.level,
     goal: goalText,
-    difficulty: difficultyText,
+    difficulty: data.difficulty,
+    profile: data.profile ?? '',
   };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FC } from 'react';
-import { Star, Trash2, MessageSquare, ListTodo, Link2, Brain, ArrowUpRight, ExternalLink, X, FileText, AlertTriangle, type LucideIcon } from 'lucide-react';
+import { Star, Trash2, MessageSquare, ListTodo, Link2, ArrowUpRight, ExternalLink, X, FileText, AlertTriangle, type LucideIcon } from 'lucide-react';
 import { useFavoriteStore, type Favorite, type FavoriteType } from '../stores/useFavoriteStore';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 import { EmptyFavorites, LoadingState, ErrorState } from '../components/states';
@@ -14,18 +14,17 @@ import { lowlight } from '../utils/markdown';
 import type { Resource, Stage, Task } from '../types';
 
 const FILTER_TABS: { key: FavoriteType | 'all'; label: string; icon: LucideIcon }[] = [
-  { key: 'all',       label: '全 部',     icon: Star },
-  { key: 'task',      label: '任 务',     icon: ListTodo },
-  { key: 'resource',  label: '资 源',     icon: Link2 },
-  { key: 'message',   label: 'AI 回 答',  icon: MessageSquare },
-  { key: 'flashcard', label: '闪 卡',     icon: Brain },
+  { key: 'all',      label: '全 部',     icon: Star },
+  { key: 'task',     label: '任 务',     icon: ListTodo },
+  { key: 'resource', label: '资 源',     icon: Link2 },
+  { key: 'message',  label: 'AI 回 答',  icon: MessageSquare },
 ];
 
 const TYPE_ICON: Record<FavoriteType, LucideIcon> = {
-  task: ListTodo, resource: Link2, message: MessageSquare, flashcard: Brain,
+  task: ListTodo, resource: Link2, message: MessageSquare,
 };
 const TYPE_LABEL: Record<FavoriteType, string> = {
-  task: '任 务', resource: '资 源', message: 'AI 回 答', flashcard: '闪 卡',
+  task: '任 务', resource: '资 源', message: 'AI 回 答',
 };
 
 export default function FavoritesPage() {
@@ -97,12 +96,14 @@ export default function FavoritesPage() {
       window.location.assign(`/roadmap/${fav.roadmap_id}`);
     } else if (fav.type === 'message') {
       window.location.assign('/tutor');
-    } else if (fav.type === 'flashcard') {
-      window.location.assign('/flashcards');
     } else {
       window.location.assign('/');
     }
   };
+
+  const visibleFavorites = favorites.filter(
+    (f) => f.type === 'task' || f.type === 'resource' || f.type === 'message'
+  );
 
   return (
     <div className="h-full overflow-y-auto">
@@ -153,11 +154,11 @@ export default function FavoritesPage() {
         {!isLoading && error && (
           <ErrorState variant="card" level="unknown" error={error} onRetry={retry} isRetrying={isRetrying} />
         )}
-        {!isLoading && !error && favorites.length === 0 && <EmptyFavorites />}
+        {!isLoading && !error && visibleFavorites.length === 0 && <EmptyFavorites />}
 
-        {!isLoading && !error && favorites.length > 0 && (
+        {!isLoading && !error && visibleFavorites.length > 0 && (
           <ul className="space-y-3">
-            {favorites.map((f) => (
+            {visibleFavorites.map((f) => (
               <FavoriteItem
                 key={f.id}
                 favorite={f}
@@ -332,7 +333,7 @@ const ResourceDetailModal: FC<{
 };
 
 const TASK_TYPE_LABEL: Record<string, string> = {
-  reading: '阅 · READING', video: '影 · VIDEO', exercise: '习 · EXERCISE', project: '作 · PROJECT', quiz: '问 · QUIZ',
+  reading: '阅 · READING', video: '影 · VIDEO', project: '作 · PROJECT',
 };
 
 const TaskDetailModal: FC<{
@@ -394,20 +395,13 @@ const TaskDetailModal: FC<{
             </div>
           )}
 
-          {task.code_example && (
-            <pre className="bg-ink-700 text-ink-100 p-4 overflow-x-auto text-sm font-mono
-              border-l-2 border-gilt-500">
-              <code>{task.code_example}</code>
-            </pre>
-          )}
-
-          {task.exercise && (
+          {task.example?.trim() && (
             <section>
-              <div className="smallcaps mb-2 text-[9px]">习 · EXERCISE</div>
-              <div className="border border-seal-400/40 bg-seal-50/40 dark:bg-seal-700/10 p-4">
+              <div className="smallcaps mb-2 text-[9px] text-gilt-500">示 例 · EXAMPLE</div>
+              <div className="border border-gilt-500/40 bg-gilt-500/5 p-4">
                 <div className="markdown-content text-sm">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { lowlight }]]}>
-                    {sanitizeMarkdown(task.exercise)}
+                    {sanitizeMarkdown(task.example)}
                   </ReactMarkdown>
                 </div>
               </div>

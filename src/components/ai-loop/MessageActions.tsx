@@ -1,12 +1,11 @@
 import { useState, type FC } from 'react';
-import { Copy, Brain, ListTodo, Star, ThumbsUp, ThumbsDown, type LucideIcon } from 'lucide-react';
+import { Copy, ListTodo, Star, ThumbsUp, ThumbsDown, type LucideIcon } from 'lucide-react';
 import { useFavoriteStore } from '../../stores/useFavoriteStore';
 import { extractPreview } from '../../utils/extractQuestion';
 
 interface Props {
   content: string;
   messageId: string;
-  onOpenFlashcardDrawer: () => void;
   onOpenTaskDrawer: () => void;
   /** 用于构造 favorite refId,默认用 messageId */
   refId?: string;
@@ -15,7 +14,6 @@ interface Props {
 const MessageActions: FC<Props> = ({
   content,
   messageId,
-  onOpenFlashcardDrawer,
   onOpenTaskDrawer,
   refId,
 }) => {
@@ -52,7 +50,6 @@ const MessageActions: FC<Props> = ({
   return (
     <div className="mt-3 flex items-center gap-1 animate-fade-in">
       <ActionButton onClick={handleCopy} active={copied} label={copied ? '已复制' : '复制'} icon={Copy} />
-      <ActionButton onClick={onOpenFlashcardDrawer} label="转闪卡" icon={Brain} />
       <ActionButton onClick={onOpenTaskDrawer} label="转任务" icon={ListTodo} />
       <ActionButton
         onClick={handleFavorite}
@@ -95,10 +92,10 @@ interface ActionButtonProps {
 const ActionButton: FC<ActionButtonProps> = ({ onClick, label, icon: Icon, active, filled, noLabel }) => (
   <button
     onClick={onClick}
-    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-display transition-colors border ${
       active
-        ? 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300'
-        : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200'
+        ? 'border-seal-400 bg-seal-50/60 dark:bg-seal-700/15 text-seal-500'
+        : 'border-ink-200 dark:border-ink-700/40 text-ink-500 dark:text-ink-200 hover:border-seal-400 hover:text-seal-500 hover:bg-ink-50 dark:hover:bg-night-300/40'
     }`}
     title={label || undefined}
   >

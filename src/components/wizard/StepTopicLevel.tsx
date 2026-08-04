@@ -4,12 +4,12 @@ import { useCreateRoadmapWizardStore, validateTopic, type Level } from '../../st
 import WizardShell from './WizardShell';
 
 const LEVEL_OPTIONS: { value: Level; label: string; desc: string }[] = [
-  { value: '入门', label: '入 门', desc: '看 过 几 篇 博 客,基 础 概 念 模 糊' },
-  { value: '进阶', label: '进 阶', desc: '能 写 简 单 代 码 / 练 习,想 系 统 化' },
+  { value: '入门', label: '入 门', desc: '没 有 基 础,从 零 开 始' },
+  { value: '进阶', label: '进 阶', desc: '已 完 成 基 础 入 门,想 系 统 化' },
   { value: '高级', label: '高 级', desc: '已 有 实 操 经 验,想 深 入 原 理' },
 ];
 
-const TOPIC_EXAMPLES = ['机器学习', 'Python 数据分析', 'Rust 系统编程', '摄影入门', 'Web 安全'];
+const TOPIC_EXAMPLES = ['机器学习', '日语 N2', '摄影构图', '法语入门', '钢琴演奏', 'Rust 系统编程'];
 const TOPIC_COUNTER = ['AI', '编程', '学习', '技术'];
 
 const inputClass = `w-full px-4 py-3 bg-paper-fold dark:bg-night-300
@@ -30,7 +30,7 @@ const StepTopicLevel: FC<{ step: 1 | 2 }> = ({ step }) => {
       <WizardShell
         title="你 欲 学 何 术 ?"
         subtitle="越 具 体,生 成 的 路 线 越 贴 合 你"
-        aiHint="我 会 分 析 这 个 主 题,设 计 3-6 个 学 习 阶 段,覆 盖 核 心 概 念 到 实 践。"
+        aiHint="我 会 分 析 这 个 主 题 的 广 度 与 深 度,自 适 应 设 计 学 习 阶 段 与 任 务。"
       >
         <div>
           <label className="smallcaps mb-2 block text-[10px]">学 习 主 题</label>
@@ -38,7 +38,7 @@ const StepTopicLevel: FC<{ step: 1 | 2 }> = ({ step }) => {
             type="text"
             value={topic}
             onChange={(e) => setField('topic', e.target.value)}
-            placeholder="例:机 器 学 习、Python 编 程、Web 开 发"
+            placeholder="例:机 器 学 习、日 语 N2、摄 影 构 图"
             className={inputClass}
             autoFocus
           />

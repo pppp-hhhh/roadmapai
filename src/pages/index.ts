@@ -1,9 +1,8 @@
 export { default as HomePage } from './HomePage';
 export { default as CreateRoadmapPage } from './CreateRoadmapPage';
 export { default as RoadmapDetailPage } from './RoadmapDetailPage';
-export { default as FlashcardsPage } from './FlashcardsPage';
+export { default as OnboardingPage } from './OnboardingPage';
 export { default as AiTutorPage } from './AiTutorPage';
 export { default as SettingsPage } from './SettingsPage';
 export { default as FavoritesPage } from './FavoritesPage';
 export { default as StatsPage } from './StatsPage';
-export { default as OnboardingPage } from './OnboardingPage';

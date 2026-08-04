@@ -13,7 +13,6 @@ export interface OnboardingData {
   topic: string;
   level: OnboardingLevel;
   goal: string;
-  weeklyHours: number;
   createdRoadmapId: string | null;
 }
 
@@ -39,7 +38,6 @@ const initialData: OnboardingData = {
   topic: '',
   level: '入门',
   goal: '',
-  weeklyHours: 5,
   createdRoadmapId: null,
 };
 
@@ -101,7 +99,6 @@ export const useOnboardingStore = create<OnboardingState>()(
         topic: s.topic,
         level: s.level,
         goal: s.goal,
-        weeklyHours: s.weeklyHours,
         currentStep: s.currentStep,
         completed: s.completed,
       }),

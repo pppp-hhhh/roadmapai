@@ -31,7 +31,7 @@ pub async fn add_favorite(
     info!("添加收藏: type={}, ref_id={}", input.fav_type, input.ref_id);
 
     // 校验 type 在白名单内,避免脏数据
-    if !["task", "resource", "message", "flashcard"].contains(&input.fav_type.as_str()) {
+    if !["task", "resource", "message"].contains(&input.fav_type.as_str()) {
         return Err(format!("非法的 favorite type: {}", input.fav_type));
     }
 
@@ -48,10 +48,7 @@ pub async fn add_favorite(
 }
 
 #[tauri::command]
-pub async fn remove_favorite(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn remove_favorite(state: State<'_, AppState>, id: String) -> Result<(), String> {
     info!("删除收藏: {}", id);
     let db = state.db.lock().await;
     db.remove_favorite(&id).await

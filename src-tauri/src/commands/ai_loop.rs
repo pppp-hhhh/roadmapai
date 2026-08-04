@@ -1,4 +1,4 @@
-use crate::services::{build_outline_prompt, get_provider, AiProvider};
+use crate::services::{get_provider, AiProvider};
 use crate::AppState;
 use reqwest::Client;
 use serde::Serialize;
@@ -27,7 +27,8 @@ pub async fn refine_task_content(
     let (settings, api_key, custom_config) = {
         let db = state.db.lock().await;
         let settings = db.get_settings().await?;
-        let api_key = db.get_api_key(&settings.ai_provider)
+        let api_key = db
+            .get_api_key(&settings.ai_provider)
             .await?
             .ok_or_else(|| format!("{} 的 API Key 未找到", settings.ai_provider))?;
         let cfg = db.get_api_config(&settings.ai_provider).await?;
@@ -54,7 +55,7 @@ pub async fn refine_task_content(
 【输出 JSON 格式】
 {{
   "title": "≤30 字的中文任务标题",
-  "task_type": "reading|exercise|project|video|quiz 之一",
+  "task_type": "reading|video|project 之一",
   "minutes": 5~120 的整数(预估学习时长),
   "content": "完整的 markdown 任务内容,含:概述 / 关键概念(列表) / 示例 / 小练习(可选) / 小结"
 }}
@@ -67,7 +68,10 @@ pub async fn refine_task_content(
             if cfg.provider_type == "anthropic" {
                 Box::new(crate::services::ClaudeProvider::new())
             } else {
-                Box::new(crate::services::CustomProvider::new(cfg.base_url.clone(), cfg.model.clone()))
+                Box::new(crate::services::CustomProvider::new(
+                    cfg.base_url.clone(),
+                    cfg.model.clone(),
+                ))
             }
         }
         _ => get_provider(&settings.ai_provider),
@@ -84,10 +88,17 @@ pub async fn refine_task_content(
         .map_err(|e| format!("解析 AI 返回 JSON 失败: {}\n原文: {}", e, raw))?;
 
     Ok(RefinedContent {
-        title: parsed["title"].as_str().unwrap_or("新任务").trim().to_string(),
+        title: parsed["title"]
+            .as_str()
+            .unwrap_or("新任务")
+            .trim()
+            .to_string(),
         task_type: validate_task_type(parsed["task_type"].as_str().unwrap_or("reading")),
         minutes: parsed["minutes"].as_u64().unwrap_or(15).min(120).max(5) as u32,
-        content: parsed["content"].as_str().unwrap_or(&raw_answer).to_string(),
+        content: parsed["content"]
+            .as_str()
+            .unwrap_or(&raw_answer)
+            .to_string(),
     })
 }
 
@@ -108,13 +119,7 @@ fn strip_code_fence(s: &str) -> &str {
 
 fn validate_task_type(t: &str) -> String {
     match t {
-        "reading" | "exercise" | "project" | "video" | "quiz" => t.to_string(),
+        "reading" | "video" | "project" => t.to_string(),
         _ => "reading".to_string(),
     }
-}
-
-// 抑制 outline prompt 的 unused 警告(其他模块使用)
-#[allow(dead_code)]
-fn _unused() {
-    let _ = build_outline_prompt("", "", "", "");
 }

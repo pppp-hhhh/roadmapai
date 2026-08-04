@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import { HomePage, CreateRoadmapPage, RoadmapDetailPage, FlashcardsPage, AiTutorPage, SettingsPage, FavoritesPage, StatsPage, OnboardingPage } from './pages';
+import { HomePage, CreateRoadmapPage, RoadmapDetailPage, OnboardingPage, AiTutorPage, SettingsPage, FavoritesPage, StatsPage } from './pages';
 import { useOnboardingStore } from './stores/useOnboardingStore';
 import type { ReactNode } from 'react';
 
@@ -25,7 +25,6 @@ function App() {
         <Route index element={<HomePage />} />
         <Route path="create" element={<CreateRoadmapPage />} />
         <Route path="roadmap/:id" element={<RoadmapDetailPage />} />
-        <Route path="flashcards" element={<FlashcardsPage />} />
         <Route path="tutor" element={<AiTutorPage />} />
         <Route path="favorites" element={<FavoritesPage />} />
         <Route path="stats" element={<StatsPage />} />

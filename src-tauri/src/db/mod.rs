@@ -1,5 +1,7 @@
-use crate::models::{ApiConfig, ChatMessageRow, ChatSession, Favorite, Flashcard, Resource, Roadmap, Settings, Stage, Task};
-use chrono::{DateTime, Utc};
+use crate::models::{
+    ApiConfig, ChatMessageRow, ChatSession, Favorite, Resource, Roadmap, Settings, Stage, Task,
+};
+use chrono::Utc;
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use tauri::{AppHandle, Manager};
 use tracing::info;
@@ -16,8 +18,7 @@ impl Database {
             .app_data_dir()
             .map_err(|e| format!("无法获取应用数据目录: {}", e))?;
 
-        std::fs::create_dir_all(&app_dir)
-            .map_err(|e| format!("无法创建应用数据目录: {}", e))?;
+        std::fs::create_dir_all(&app_dir).map_err(|e| format!("无法创建应用数据目录: {}", e))?;
 
         let db_path = app_dir.join("app_data.db");
         let database_url = format!("sqlite:{}?mode=rwc", db_path.display());
@@ -45,10 +46,11 @@ impl Database {
             .await
             .map_err(|e| format!("数据库迁移失败: {}", e))?;
 
-        let current_version: i32 = sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM _schema_version")
-            .fetch_one(&self.pool)
-            .await
-            .unwrap_or(0);
+        let current_version: i32 =
+            sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM _schema_version")
+                .fetch_one(&self.pool)
+                .await
+                .unwrap_or(0);
 
         if current_version < 1 {
             sqlx::query(
@@ -69,7 +71,7 @@ impl Database {
                     objective TEXT NOT NULL,
                     estimated_hours REAL NOT NULL,
                     stage_type TEXT NOT NULL DEFAULT 'learning',
-                    is_locked INTEGER NOT NULL DEFAULT 1,
+                    is_locked INTEGER NOT NULL DEFAULT 0,
                     quiz_json TEXT,
                     pass_threshold REAL NOT NULL DEFAULT 0.7,
                     FOREIGN KEY (roadmap_id) REFERENCES roadmaps(id) ON DELETE CASCADE
@@ -262,6 +264,120 @@ impl Database {
             info!("数据库迁移 v5 完成:chat_sessions / chat_messages 表");
         }
 
+        // v6 (通用化): 任务字段 code_example → example, 路线表保存生成上下文
+        if current_version < 6 {
+            sqlx::query("ALTER TABLE tasks RENAME COLUMN code_example TO example")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v6 失败: {}", e))?;
+
+            sqlx::query("ALTER TABLE roadmaps ADD COLUMN metadata TEXT")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v6 失败: {}", e))?;
+
+            sqlx::query("INSERT INTO _schema_version (version) VALUES (6)")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v6 记录失败: {}", e))?;
+
+            info!("数据库迁移 v6 完成:code_example → example, roadmaps.metadata");
+        }
+
+        // v7 (通用化): 移除 exercise 字段, 旧练习并入 content, 旧 exercise 任务改为 reading
+        if current_version < 7 {
+            sqlx::query(
+                r#"
+                UPDATE tasks
+                SET content = content || char(10) || char(10) || '## 练习/检验' || char(10) || char(10) || exercise
+                WHERE exercise IS NOT NULL AND trim(exercise) <> '';
+                UPDATE tasks SET task_type = 'reading' WHERE task_type = 'exercise';
+                ALTER TABLE tasks DROP COLUMN exercise;
+                "#,
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("数据库迁移 v7 失败: {}", e))?;
+
+            sqlx::query("INSERT INTO _schema_version (version) VALUES (7)")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v7 记录失败: {}", e))?;
+
+            info!("数据库迁移 v7 完成:移除 exercise 字段并合并旧内容");
+        }
+
+        // v8 (通用化): 移除记忆卡/测验, stages 增加 prerequisites, tasks 增加 order/prerequisites/points,
+        // chat_sessions 增加 stage_id/task_id
+        if current_version < 8 {
+            sqlx::query(
+                r#"
+                DROP TABLE IF EXISTS flashcards;
+                DELETE FROM favorites WHERE type = 'flashcard';
+
+                CREATE TABLE stages_new (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    roadmap_id TEXT NOT NULL,
+                    order_index INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    objective TEXT NOT NULL,
+                    estimated_hours REAL NOT NULL,
+                    stage_type TEXT NOT NULL DEFAULT 'learning',
+                    is_locked INTEGER NOT NULL DEFAULT 0,
+                    prerequisites TEXT NOT NULL DEFAULT '[]',
+                    metadata TEXT,
+                    FOREIGN KEY (roadmap_id) REFERENCES roadmaps(id) ON DELETE CASCADE
+                );
+
+                INSERT INTO stages_new (id, roadmap_id, order_index, name, objective, estimated_hours, stage_type, is_locked, prerequisites, metadata)
+                SELECT id, roadmap_id, order_index, name, objective, estimated_hours,
+                       CASE WHEN stage_type = 'quiz' THEN 'learning' ELSE stage_type END,
+                       is_locked, '[]', metadata
+                FROM stages;
+
+                DROP TABLE stages;
+                ALTER TABLE stages_new RENAME TO stages;
+                CREATE INDEX idx_stages_roadmap ON stages(roadmap_id);
+
+                ALTER TABLE tasks ADD COLUMN "order" INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE tasks ADD COLUMN prerequisites TEXT NOT NULL DEFAULT '[]';
+                ALTER TABLE tasks ADD COLUMN points TEXT NOT NULL DEFAULT '[]';
+
+                CREATE TEMP TABLE task_order_backfill AS
+                    SELECT id, ROW_NUMBER() OVER (PARTITION BY stage_id ORDER BY rowid) AS rn
+                    FROM tasks;
+                UPDATE tasks SET "order" = (SELECT rn FROM task_order_backfill WHERE task_order_backfill.id = tasks.id);
+                DROP TABLE task_order_backfill;
+
+                ALTER TABLE chat_sessions ADD COLUMN stage_id TEXT;
+                ALTER TABLE chat_sessions ADD COLUMN task_id TEXT;
+                "#,
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("数据库迁移 v8 失败: {}", e))?;
+
+            sqlx::query("INSERT INTO _schema_version (version) VALUES (8)")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v8 记录失败: {}", e))?;
+
+            info!("数据库迁移 v8 完成:移除记忆卡, stages/tasks/chat_sessions 新增字段");
+        }
+
+        // v9: 取消章节锁定,所有阶段都可自由查看/学习
+        if current_version < 9 {
+            sqlx::query("UPDATE stages SET is_locked = 0 WHERE is_locked = 1")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v9 解锁失败: {}", e))?;
+            sqlx::query("INSERT INTO _schema_version (version) VALUES (9)")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| format!("数据库迁移 v9 记录失败: {}", e))?;
+            info!("数据库迁移 v9 完成:取消章节锁定");
+        }
+
         // Add future migrations here as `if current_version < N { ... }` blocks
 
         // Insert default settings if not exists
@@ -283,8 +399,8 @@ impl Database {
     pub async fn create_roadmap(&self, roadmap: &Roadmap) -> Result<(), String> {
         sqlx::query(
             r#"
-            INSERT INTO roadmaps (id, title, description, estimated_total_hours, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO roadmaps (id, title, description, estimated_total_hours, created_at, metadata)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&roadmap.id)
@@ -292,6 +408,7 @@ impl Database {
         .bind(&roadmap.description)
         .bind(roadmap.estimated_total_hours)
         .bind(roadmap.created_at.to_rfc3339())
+        .bind(&roadmap.metadata)
         .execute(&self.pool)
         .await
         .map_err(|e| format!("无法创建路线图: {}", e))?;
@@ -301,7 +418,7 @@ impl Database {
 
     pub async fn get_roadmap(&self, id: &str) -> Result<Option<Roadmap>, String> {
         let roadmap = sqlx::query_as::<_, Roadmap>(
-            "SELECT id, title, description, estimated_total_hours, created_at FROM roadmaps WHERE id = ?",
+            "SELECT id, title, description, estimated_total_hours, created_at, metadata FROM roadmaps WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -313,7 +430,7 @@ impl Database {
 
     pub async fn get_all_roadmaps(&self) -> Result<Vec<Roadmap>, String> {
         let roadmaps = sqlx::query_as::<_, Roadmap>(
-            "SELECT id, title, description, estimated_total_hours, created_at FROM roadmaps ORDER BY created_at DESC",
+            "SELECT id, title, description, estimated_total_hours, created_at, metadata FROM roadmaps ORDER BY created_at DESC",
         )
         .fetch_all(&self.pool)
         .await
@@ -332,13 +449,38 @@ impl Database {
         Ok(())
     }
 
+    pub async fn update_roadmap_basic(
+        &self,
+        id: &str,
+        title: &str,
+        description: &str,
+        estimated_total_hours: f64,
+    ) -> Result<(), String> {
+        sqlx::query(
+            r#"
+            UPDATE roadmaps
+            SET title = ?, description = ?, estimated_total_hours = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(title)
+        .bind(description)
+        .bind(estimated_total_hours)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("无法更新路线图: {}", e))?;
+
+        Ok(())
+    }
+
     // ============ Stage DAO ============
 
     pub async fn create_stage(&self, stage: &Stage) -> Result<(), String> {
         sqlx::query(
             r#"
-            INSERT INTO stages (id, roadmap_id, order_index, name, objective, estimated_hours, stage_type, is_locked, quiz_json, pass_threshold, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO stages (id, roadmap_id, order_index, name, objective, estimated_hours, stage_type, prerequisites, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&stage.id)
@@ -348,9 +490,7 @@ impl Database {
         .bind(&stage.objective)
         .bind(stage.estimated_hours)
         .bind(&stage.stage_type)
-        .bind(stage.is_locked as i32)
-        .bind(&stage.quiz_json)
-        .bind(stage.pass_threshold)
+        .bind(&stage.prerequisites)
         .bind(&stage.metadata)
         .execute(&self.pool)
         .await
@@ -363,7 +503,7 @@ impl Database {
         let stages = sqlx::query_as::<_, Stage>(
             r#"
             SELECT id, roadmap_id, order_index as `order`, name, objective, estimated_hours,
-                   stage_type, is_locked as `is_locked`, quiz_json, pass_threshold, metadata
+                   stage_type, prerequisites, metadata
             FROM stages WHERE roadmap_id = ? ORDER BY order_index
             "#,
         )
@@ -379,7 +519,7 @@ impl Database {
         let stage = sqlx::query_as::<_, Stage>(
             r#"
             SELECT id, roadmap_id, order_index as `order`, name, objective, estimated_hours,
-                   stage_type, is_locked as `is_locked`, quiz_json, pass_threshold, metadata
+                   stage_type, prerequisites, metadata
             FROM stages WHERE id = ?
             "#,
         )
@@ -391,35 +531,37 @@ impl Database {
         Ok(stage)
     }
 
-    pub async fn unlock_next_stage(&self, current_stage_id: &str) -> Result<(), String> {
-        // Get current stage to find its roadmap and order
-        let current = self.get_stage_by_id(current_stage_id).await?
-            .ok_or("未找到阶段")?;
-
-        // Unlock the next stage (order + 1) in the same roadmap
+    pub async fn update_stage(&self, stage: &Stage) -> Result<(), String> {
         sqlx::query(
             r#"
-            UPDATE stages SET is_locked = 0
-            WHERE roadmap_id = ? AND order_index = ? AND is_locked = 1
+            UPDATE stages
+            SET order_index = ?, name = ?, objective = ?, estimated_hours = ?,
+                stage_type = ?, prerequisites = ?, metadata = ?
+            WHERE id = ?
             "#,
         )
-        .bind(&current.roadmap_id)
-        .bind(current.order + 1)
+        .bind(stage.order)
+        .bind(&stage.name)
+        .bind(&stage.objective)
+        .bind(stage.estimated_hours)
+        .bind(&stage.stage_type)
+        .bind(&stage.prerequisites)
+        .bind(&stage.metadata)
+        .bind(&stage.id)
         .execute(&self.pool)
         .await
-        .map_err(|e| format!("无法解锁下一阶段: {}", e))?;
+        .map_err(|e| format!("无法更新阶段: {}", e))?;
 
         Ok(())
     }
 
-    pub async fn update_stage_lock(&self, stage_id: &str, is_locked: bool) -> Result<(), String> {
-        sqlx::query("UPDATE stages SET is_locked = ? WHERE id = ?")
-            .bind(is_locked as i32)
+    pub async fn delete_stage_complete(&self, stage_id: &str) -> Result<(), String> {
+        self.delete_tasks_by_stage(stage_id).await?;
+        sqlx::query("DELETE FROM stages WHERE id = ?")
             .bind(stage_id)
             .execute(&self.pool)
             .await
-            .map_err(|e| format!("无法更新阶段锁定状态: {}", e))?;
-
+            .map_err(|e| format!("无法删除阶段: {}", e))?;
         Ok(())
     }
 
@@ -428,17 +570,19 @@ impl Database {
     pub async fn create_task(&self, task: &Task) -> Result<(), String> {
         sqlx::query(
             r#"
-            INSERT INTO tasks (id, stage_id, title, content, task_type, code_example, exercise, is_completed, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (id, stage_id, "order", title, content, points, prerequisites, task_type, example, is_completed, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&task.id)
         .bind(&task.stage_id)
+        .bind(task.order)
         .bind(&task.title)
         .bind(&task.content)
+        .bind(&task.points)
+        .bind(&task.prerequisites)
         .bind(&task.task_type)
-        .bind(&task.code_example)
-        .bind(&task.exercise)
+        .bind(&task.example)
         .bind(task.is_completed as i32)
         .bind(task.completed_at.map(|d| d.to_rfc3339()))
         .execute(&self.pool)
@@ -451,8 +595,8 @@ impl Database {
     pub async fn get_tasks_by_stage(&self, stage_id: &str) -> Result<Vec<Task>, String> {
         let tasks = sqlx::query_as::<_, Task>(
             r#"
-            SELECT id, stage_id, title, content, task_type, code_example, exercise,
-                   is_completed as `is_completed`, completed_at
+            SELECT id, stage_id, "order" as `order`, title, content, points, prerequisites,
+                   task_type, example, is_completed as `is_completed`, completed_at
             FROM tasks WHERE stage_id = ?
             "#,
         )
@@ -462,6 +606,97 @@ impl Database {
         .map_err(|e| format!("无法获取任务列表: {}", e))?;
 
         Ok(tasks)
+    }
+
+    pub async fn get_task_by_id(&self, task_id: &str) -> Result<Option<Task>, String> {
+        let task = sqlx::query_as::<_, Task>(
+            r#"
+            SELECT id, stage_id, "order" as `order`, title, content, points, prerequisites,
+                   task_type, example, is_completed as `is_completed`, completed_at
+            FROM tasks WHERE id = ?
+            "#,
+        )
+        .bind(task_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| format!("无法获取任务: {}", e))?;
+
+        Ok(task)
+    }
+
+    pub async fn get_all_tasks(&self) -> Result<Vec<Task>, String> {
+        let tasks = sqlx::query_as::<_, Task>(
+            r#"
+            SELECT id, stage_id, "order" as `order`, title, content, points, prerequisites,
+                   task_type, example, is_completed as `is_completed`, completed_at
+            FROM tasks
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| format!("无法获取任务列表: {}", e))?;
+
+        Ok(tasks)
+    }
+
+    pub async fn upsert_task(&self, task: &Task) -> Result<(), String> {
+        sqlx::query(
+            r#"
+            INSERT INTO tasks (id, stage_id, "order", title, content, points, prerequisites, task_type, example, is_completed, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                stage_id = excluded.stage_id,
+                "order" = excluded."order",
+                title = excluded.title,
+                content = excluded.content,
+                points = excluded.points,
+                prerequisites = excluded.prerequisites,
+                task_type = excluded.task_type,
+                example = excluded.example,
+                is_completed = excluded.is_completed,
+                completed_at = excluded.completed_at
+            "#,
+        )
+        .bind(&task.id)
+        .bind(&task.stage_id)
+        .bind(task.order)
+        .bind(&task.title)
+        .bind(&task.content)
+        .bind(&task.points)
+        .bind(&task.prerequisites)
+        .bind(&task.task_type)
+        .bind(&task.example)
+        .bind(task.is_completed as i32)
+        .bind(task.completed_at.map(|d| d.to_rfc3339()))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("无法写入任务: {}", e))?;
+
+        Ok(())
+    }
+
+    pub async fn delete_task_complete(&self, task_id: &str) -> Result<(), String> {
+        sqlx::query("DELETE FROM favorites WHERE type = 'resource' AND ref_id IN (SELECT id FROM resources WHERE task_id = ?)")
+            .bind(task_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除资源收藏: {}", e))?;
+        sqlx::query("DELETE FROM resources WHERE task_id = ?")
+            .bind(task_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除资源: {}", e))?;
+        sqlx::query("DELETE FROM favorites WHERE type = 'task' AND ref_id = ?")
+            .bind(task_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除收藏: {}", e))?;
+        sqlx::query("DELETE FROM tasks WHERE id = ?")
+            .bind(task_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除任务: {}", e))?;
+        Ok(())
     }
 
     pub async fn mark_task_completed(&self, task_id: &str, completed: bool) -> Result<(), String> {
@@ -521,7 +756,14 @@ impl Database {
         Ok(())
     }
 
-    pub async fn update_resource(&self, id: &str, title: &str, url: &str, snippet: &str, resource_type: &str) -> Result<(), String> {
+    pub async fn update_resource(
+        &self,
+        id: &str,
+        title: &str,
+        url: &str,
+        snippet: &str,
+        resource_type: &str,
+    ) -> Result<(), String> {
         sqlx::query(
             r#"
             UPDATE resources SET title = ?, url = ?, snippet = ?, resource_type = ?
@@ -551,16 +793,42 @@ impl Database {
     }
 
     pub async fn delete_tasks_by_stage(&self, stage_id: &str) -> Result<(), String> {
-        sqlx::query("DELETE FROM resources WHERE task_id IN (SELECT id FROM tasks WHERE stage_id = ?)")
+        sqlx::query(
+            "DELETE FROM resources WHERE task_id IN (SELECT id FROM tasks WHERE stage_id = ?)",
+        )
+        .bind(stage_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("无法删除资源: {}", e))?;
+        sqlx::query("DELETE FROM favorites WHERE type = 'resource' AND ref_id IN (SELECT id FROM resources WHERE task_id IN (SELECT id FROM tasks WHERE stage_id = ?))")
             .bind(stage_id)
             .execute(&self.pool)
             .await
-            .map_err(|e| format!("无法删除资源: {}", e))?;
+            .map_err(|e| format!("无法删除资源收藏: {}", e))?;
+        sqlx::query("DELETE FROM favorites WHERE type = 'task' AND ref_id IN (SELECT id FROM tasks WHERE stage_id = ?)")
+            .bind(stage_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除收藏: {}", e))?;
         sqlx::query("DELETE FROM tasks WHERE stage_id = ?")
             .bind(stage_id)
             .execute(&self.pool)
             .await
             .map_err(|e| format!("无法删除任务: {}", e))?;
+        Ok(())
+    }
+
+    pub async fn delete_resources_by_task(&self, task_id: &str) -> Result<(), String> {
+        sqlx::query("DELETE FROM favorites WHERE type = 'resource' AND ref_id IN (SELECT id FROM resources WHERE task_id = ?)")
+            .bind(task_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除资源收藏: {}", e))?;
+        sqlx::query("DELETE FROM resources WHERE task_id = ?")
+            .bind(task_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("无法删除资源: {}", e))?;
         Ok(())
     }
 
@@ -583,126 +851,6 @@ impl Database {
         .map_err(|e| format!("无法获取资源列表: {}", e))?;
 
         Ok(resources)
-    }
-
-    // ============ Flashcard DAO ============
-
-    pub async fn create_flashcard(&self, flashcard: &Flashcard) -> Result<(), String> {
-        sqlx::query(
-            r#"
-            INSERT INTO flashcards (id, roadmap_id, question, answer, repetitions, ease_factor, interval, next_review_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&flashcard.id)
-        .bind(&flashcard.roadmap_id)
-        .bind(&flashcard.question)
-        .bind(&flashcard.answer)
-        .bind(flashcard.repetitions)
-        .bind(flashcard.ease_factor)
-        .bind(flashcard.interval)
-        .bind(flashcard.next_review_date.to_rfc3339())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| format!("无法创建记忆卡: {}", e))?;
-
-        Ok(())
-    }
-
-    pub async fn get_due_flashcards(&self) -> Result<Vec<Flashcard>, String> {
-        let now = Utc::now().to_rfc3339();
-
-        let flashcards = sqlx::query_as::<_, Flashcard>(
-            r#"
-            SELECT id, roadmap_id, question, answer, repetitions, ease_factor, interval, next_review_date
-            FROM flashcards
-            WHERE next_review_date <= ? AND repetitions > 0
-            ORDER BY next_review_date
-            "#,
-        )
-        .bind(now)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| format!("无法获取待复习记忆卡: {}", e))?;
-
-        Ok(flashcards)
-    }
-
-    pub async fn get_new_flashcards(&self) -> Result<Vec<Flashcard>, String> {
-        let flashcards = sqlx::query_as::<_, Flashcard>(
-            r#"
-            SELECT id, roadmap_id, question, answer, repetitions, ease_factor, interval, next_review_date
-            FROM flashcards
-            WHERE repetitions = 0
-            ORDER BY next_review_date
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| format!("无法获取新记忆卡: {}", e))?;
-
-        Ok(flashcards)
-    }
-
-    pub async fn mark_flashcard_learned(&self, card_id: &str) -> Result<(), String> {
-        let tomorrow = (Utc::now() + chrono::Duration::days(1)).to_rfc3339();
-
-        sqlx::query(
-            r#"
-            UPDATE flashcards
-            SET repetitions = 1, interval = 1, next_review_date = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(tomorrow)
-        .bind(card_id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| format!("无法更新学习状态: {}", e))?;
-
-        Ok(())
-    }
-
-    pub async fn get_flashcard_by_id(&self, card_id: &str) -> Result<Option<Flashcard>, String> {
-        let flashcard = sqlx::query_as::<_, Flashcard>(
-            r#"
-            SELECT id, roadmap_id, question, answer, repetitions, ease_factor, interval, next_review_date
-            FROM flashcards WHERE id = ?
-            "#,
-        )
-        .bind(card_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| format!("无法获取记忆卡: {}", e))?;
-
-        Ok(flashcard)
-    }
-
-    pub async fn update_flashcard_review(
-        &self,
-        card_id: &str,
-        repetitions: i32,
-        ease_factor: f64,
-        interval: i32,
-        next_review_date: DateTime<Utc>,
-    ) -> Result<(), String> {
-        sqlx::query(
-            r#"
-            UPDATE flashcards
-            SET repetitions = ?, ease_factor = ?, interval = ?, next_review_date = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(repetitions)
-        .bind(ease_factor)
-        .bind(interval)
-        .bind(next_review_date.to_rfc3339())
-        .bind(card_id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| format!("无法更新记忆卡: {}", e))?;
-
-        Ok(())
     }
 
     // ============ Settings DAO ============
@@ -847,13 +995,12 @@ impl Database {
     }
 
     pub async fn get_api_key(&self, provider: &str) -> Result<Option<String>, String> {
-        let result = sqlx::query_as::<_, (String,)>(
-            "SELECT api_key FROM api_keys WHERE provider = ?",
-        )
-        .bind(provider)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| format!("无法获取 API Key: {}", e))?;
+        let result =
+            sqlx::query_as::<_, (String,)>("SELECT api_key FROM api_keys WHERE provider = ?")
+                .bind(provider)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| format!("无法获取 API Key: {}", e))?;
 
         Ok(result.map(|(key,)| key))
     }
@@ -885,10 +1032,7 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_api_config(
-        &self,
-        provider: &str,
-    ) -> Result<Option<ApiConfig>, String> {
+    pub async fn get_api_config(&self, provider: &str) -> Result<Option<ApiConfig>, String> {
         let config = sqlx::query_as::<_, ApiConfig>(
             "SELECT provider, base_url, model, provider_type FROM api_configs WHERE provider = ?",
         )
@@ -901,21 +1045,49 @@ impl Database {
 
     // ============ Chat Session DAO (v1.1) ============
 
-    pub async fn ensure_chat_session(&self, id: &str, roadmap_id: Option<&str>) -> Result<(), String> {
+    pub async fn ensure_chat_session(
+        &self,
+        id: &str,
+        roadmap_id: Option<&str>,
+        stage_id: Option<&str>,
+        task_id: Option<&str>,
+    ) -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
         sqlx::query(
             r#"
-            INSERT OR IGNORE INTO chat_sessions (id, roadmap_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT OR IGNORE INTO chat_sessions (id, roadmap_id, stage_id, task_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id)
         .bind(roadmap_id)
+        .bind(stage_id)
+        .bind(task_id)
         .bind(&now)
         .bind(&now)
         .execute(&self.pool)
         .await
         .map_err(|e| format!("无法创建 chat session: {}", e))?;
+        Ok(())
+    }
+
+    pub async fn update_chat_session_position(
+        &self,
+        id: &str,
+        stage_id: Option<&str>,
+        task_id: Option<&str>,
+    ) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE chat_sessions SET stage_id = ?, task_id = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(stage_id)
+        .bind(task_id)
+        .bind(&now)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("无法更新 chat session 位置: {}", e))?;
         Ok(())
     }
 
@@ -991,7 +1163,7 @@ impl Database {
 
     pub async fn list_chat_sessions(&self) -> Result<Vec<ChatSession>, String> {
         let rows = sqlx::query_as::<_, ChatSession>(
-            "SELECT id, roadmap_id, title, created_at, updated_at FROM chat_sessions ORDER BY updated_at DESC LIMIT 50",
+            "SELECT id, roadmap_id, title, stage_id, task_id, created_at, updated_at FROM chat_sessions ORDER BY updated_at DESC LIMIT 50",
         )
         .fetch_all(&self.pool)
         .await

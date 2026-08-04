@@ -15,7 +15,7 @@ Tauri 2 desktop: React 18+TS+Vite frontend + Rust+SQLite(sqx) backend. AI learni
 ```
 Layer 1 (1 call): Outline → N stages + time estimates
 Layer 2 (N calls): Stage skeleton → task titles + types  (并行 semaphore 6)
-Layer 3 (M×N calls): Task content → content+code+exercise+resources+flashcards  (并行)
+Layer 3 (M×N calls): Task content → content+example+resources+flashcards  (并行)
 ```
 
 Each API call uses `call_ai()` which dispatches by `provider_type`:

@@ -112,24 +112,6 @@ body {
   pointer-events: none;
 }
 
-.wax-seal {
-  width: 48px; height: 48px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #d34528 0%, #a8351a 45%, #561808 100%);
-  position: relative;
-  box-shadow:
-    inset 0 1px 2px rgba(255, 200, 180, 0.4),
-    inset 0 -3px 6px rgba(0, 0, 0, 0.5),
-    0 4px 10px rgba(86, 24, 8, 0.4);
-}
-.wax-seal::after {
-  content: '';
-  position: absolute;
-  inset: 6px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 220, 200, 0.35);
-}
-
 .ink-blot {
   position: absolute;
   border-radius: 50%;
