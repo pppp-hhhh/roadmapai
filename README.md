@@ -19,12 +19,12 @@
 
 ## 📸 预览 / Preview
 
-| 首页 · 我的学习路线 | 撰新篇 · AI 生成路线 |
+| 首页 · 我的学习路线 | 访谈生成 |
 |:---:|:---:|
-| ![首页](docs/screenshots/home.png) | ![创建路线](docs/screenshots/create.png) |
-| **路线详情 · 阶段与任务** | **抽认卡 · SM-2 间隔重复** |
-| ![路线详情](docs/screenshots/roadmap-detail.png) | ![抽认卡](docs/screenshots/flashcards.png) |
-| **AI 导师 · 流式对话** | **收藏夹 · 直达内容** |
+| ![首页](docs/screenshots/home.png) | ![访谈](docs/screenshots/intake.png) |
+| **路线详情 · 横向章节** | **AI 伙伴 · 浮窗陪读** |
+| ![路线详情](docs/screenshots/roadmap-detail.png) | ![浮窗](docs/screenshots/ai-companion.png) |
+| **AI 导师 · 全屏对话** | **收藏夹 · 直达内容** |
 | ![AI 导师](docs/screenshots/ai-tutor.png) | ![收藏夹](docs/screenshots/favorites.png) |
 
 > 📂 截图存放在 [`docs/screenshots/`](docs/screenshots/)。本地预览时相对路径即可；若推送到 GitHub 后图片未显示，请确认仓库为 **public** 或已开启 Pages 资源代理。
@@ -33,23 +33,26 @@
 
 ## 简介 / Introduction
 
-一个基于 Tauri 2 的桌面应用，利用 AI 为学习者生成个性化的学习路线图，并集成基于 SM-2 算法的间隔重复抽认卡系统。无论你想学编程、外语、医学、摄影还是职业技能，它都会按该领域公认的教材、术语和资源生成对应的学习路线。
+一款桌面端学习路线生成器。它通过 AI 多轮访谈挖掘学习目标与现状，再生成带前置依赖的学习路线；路线详情页可调用全局 AI 伙伴浮窗，在任意阶段/任务上获得结合当前进度的解答。
 
-A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps with SM-2 spaced repetition flashcards, covering any discipline from programming and languages to medicine, arts, and professional skills.
+A desktop learning companion. It first chats with you about what you want to learn and where you're stuck, then builds an ordered roadmap. A small window sits in the corner and keeps that context, so you can ask questions anytime and get answers tied to your current stage and task.
+
+---
 
 ## ✨ 功能 / Features
 
-- **AI 生成学习路线** — 描述你想学的内容（编程、语言、医学、艺术、职业技能等），AI 自动生成阶段、任务和资源
-- **三层并行生成** — 协调器 → 阶段 → 任务内容，并行加速
-- **进度追踪** — 可视化任务完成进度，支持阶段过关测验
+- **AI 多轮访谈生成** — 通过对话逐步明确目标、基础、偏好与约束；对话满 10 轮后可手动生成画像摘要，也可中途补充信息
+- **带前置依赖的路线** — 阶段、任务显式标注 prerequisites；阶段与任务数量由 AI 按主题广度自适应
+- **全局 AI 伙伴浮窗** — 可拖动、可收起/展开；路线详情页自动绑定当前阶段/任务，回答结合路线、前置依赖、用户画像与当前进度
+- **生成后局部优化** — 可选中整体/阶段/任务提交评价，AI 重绘对应部分，并保留同名任务的完成进度
+- **三层并行生成** — 协调器 → 阶段 → 任务内容，后台并发执行以加速生成
 - **资源自动搜索** — 集成 Tavily API，自动搜索学习资源（可选）
-- **间隔重复抽认卡** — 基于 SM-2 算法的闪卡复习系统
-- **AI 导师对话** — 随时随地提问，流式回复
+- **AI 导师全屏对话** — 与浮窗共用后端，支持长对话与历史查看
 - **多 AI 提供商** — 支持 OpenAI、Claude、Gemini 及自定义兼容 API
-- **深色/浅色主题** — 护眼模式，一键切换
+- **深色/浅色主题** — 资源视图日间模式采用干净白底，深色模式保持手稿氛围
 - **本地数据存储** — SQLite 本地数据库，无需联网即可使用
-- **手稿视觉风格** — 全局采用「学者的手稿」设计语言(Fraunces / Newsreader / JetBrains Mono,墨黑 + 朱砂 + 米色 + 金箔,罗马章节号、印章、朱批、金箔分隔线)
-- **收藏夹直达内容** — 收藏的「任务 / 资源」点击后直接弹模态展示内容与资源链接,无需再展开路线
+- **手稿视觉风格** — 全局采用「学者的手稿」设计语言（Fraunces / Newsreader / JetBrains Mono，墨黑 + 朱砂 + 米色 + 金箔，罗马章节号、印章、朱批、金箔分隔线）
+- **收藏夹直达内容** — 收藏的任务/资源点击后直接展示内容与资源链接，无需再展开路线
 
 ---
 
@@ -73,43 +76,51 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 
 ```
 ├── src/                        # React 前端
-│   ├── components/             # 可复用组件 (Layout, QuizModal)
+│   ├── components/
+│   │   ├── AiCompanion.tsx     # 全局 AI 伙伴浮窗(可拖动/收起/展开)
+│   │   ├── Layout.tsx          # 全局布局 + 侧边栏 + 浮窗挂载点
 │   │   ├── manuscript/         # 品牌徽 / 罗马数字工具(手稿视觉原子)
 │   │   ├── states/             # Loading / Empty / Error / Skeleton 公共组件
-│   │   ├── wizard/             # 创建路线 wizard 步骤
-│   │   ├── ai-loop/            # 消息→任务/卡片/资源的抽屉
+│   │   ├── wizard/             # 创建路线(访谈 IntakeFlow + 旧 wizard 兜底)
+│   │   ├── ai-loop/            # 消息→任务/资源的抽屉
 │   │   ├── drawer/             # 通用 SideDrawer
 │   │   ├── onboarding/         # 首次引导步骤
 │   │   └── sidebar/            # 侧边栏 4 个子组件
-│   ├── pages/                  # 页面组件
+│   ├── pages/
 │   │   ├── HomePage.tsx        # 首页仪表盘
-│   │   ├── CreateRoadmapPage.tsx  # 创建路线
-│   │   ├── RoadmapDetailPage.tsx  # 路线详情与进度
-│   │   ├── FlashcardsPage.tsx  # 抽认卡复习
-│   │   ├── AiTutorPage.tsx     # AI 导师对话
+│   │   ├── CreateRoadmapPage.tsx  # 创建路线(访谈流程)
+│   │   ├── RoadmapDetailPage.tsx  # 路线详情 · 横向章节 + 浮窗绑定
+│   │   ├── AiTutorPage.tsx     # AI 导师全屏对话
 │   │   ├── FavoritesPage.tsx   # 收藏夹
 │   │   ├── StatsPage.tsx       # 学习统计
 │   │   ├── OnboardingPage.tsx  # 首次引导
 │   │   └── SettingsPage.tsx    # 设置 (API密钥/主题)
 │   ├── stores/                 # Zustand 状态管理
+│   │   ├── useAiCompanionStore.ts   # 浮窗位置/展开/上下文
+│   │   ├── useIntakeStore.ts        # 访谈流程状态
+│   │   ├── useRoadmapStore.ts       # 路线 CRUD / 优化
+│   │   ├── useChatStore.ts          # 聊天历史
+│   │   └── ...
 │   ├── types.ts                # TypeScript 类型定义
-│   └── utils/                  # 工具函数 (markdown 渲染 / 闪卡预览)
+│   └── utils/                  # 工具函数 (markdown / 链接 / 重试)
 ├── src-tauri/                  # Rust 后端
 │   ├── src/
-│   │   ├── commands/           # Tauri 命令
+│   │   ├── commands/
 │   │   │   ├── roadmap.rs      # 路线生成与 CRUD
-│   │   │   ├── flashcard.rs    # SM-2 抽认卡
-│   │   │   ├── chat.rs         # AI 对话
-│   │   │   ├── ai_loop.rs      # AI 回路(消息→任务/卡片/资源)
+│   │   │   ├── intake.rs       # intake_ask / intake_summarize 访谈命令
+│   │   │   ├── optimize.rs     # optimize_roadmap 整体/阶段/任务级优化
+│   │   │   ├── chat.rs         # AI 对话(含 stage_id/task_id 位置上下文)
+│   │   │   ├── ai_loop.rs      # AI 回路(消息→任务/资源)
 │   │   │   ├── favorites.rs    # 收藏夹
 │   │   │   ├── stats.rs        # 学习统计
 │   │   │   └── settings.rs     # API 配置
-│   │   ├── db/mod.rs           # SQLite 数据库层
+│   │   ├── db/mod.rs           # SQLite 数据库层 + 迁移
 │   │   ├── models/mod.rs       # 数据模型
 │   │   └── services/
 │   │       ├── ai.rs           # AI 提供商实现
 │   │       ├── parallel.rs     # 并行生成
-│   │       └── roadmap_parser.rs  # AI 响应解析
+│   │       ├── roadmap_parser.rs  # AI 响应解析
+│   │       └── tavily.rs       # Tavily 资源搜索
 │   ├── icons/                  # 应用图标(多尺寸 + 源 SVG/PNG)
 │   └── tauri.conf.json         # Tauri 配置
 ├── docs/
@@ -130,18 +141,14 @@ A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps wi
 ### 安装 / Installation
 
 ```bash
-# 克隆仓库
 git clone https://github.com/pppp-hhhh/roadmapai.git
 cd roadmapai
-
-# 安装前端依赖（Rust 依赖会在首次 tauri dev/build 时自动下载）
 npm install
 ```
 
 ### 开发 / Development
 
 ```bash
-# 启动 Tauri 开发模式（前端 + Rust 后端）
 npm run tauri dev
 ```
 
@@ -150,7 +157,6 @@ npm run tauri dev
 ### 构建 / Build
 
 ```bash
-# 生产构建
 npm run tauri build
 ```
 
@@ -164,7 +170,7 @@ macOS / Linux 无法直接产出 Windows 安装包，请使用仓库内置的 Gi
 2. 选择 **Build Windows App** → **Run workflow**
 3. 构建完成后，在对应运行记录中下载 `RoadmapAI-windows` artifact，内含 NSIS / MSI 安装包
 
-也可以推送 `v*` 标签（如 `v1.1.0`）自动触发构建。
+也可以推送 `v*` 标签（如 `v1.2.0`）自动触发构建。
 
 ---
 
@@ -196,33 +202,48 @@ macOS / Linux 无法直接产出 Windows 安装包，请使用仓库内置的 Gi
 
 ## 🎯 使用指南 / Usage
 
-### 创建学习路线
+### 1. 访谈生成路线
 
-1. 点击首页 **"新建路线"**
-2. 输入学习主题，选择当前水平和偏好难度
-3. （可选）描述学习目标 — 不填则 AI 自动判断
-4. AI 自动评估学习时间和周期，生成包含阶段和任务的个性化路线
+1. 在首页点击 **"新建路线"**
+2. 填写主题、当前水平、期望难度
+3. AI 围绕目标、基础、偏好、约束、期望深度进行多轮追问（约 10 轮）
+4. 任意时刻可选择 **生成画像**、**继续追问** 或 **补充信息**
+5. 画像页可编辑难度、追加反馈，确认后由 AI 生成完整路线
 
-### 追踪进度
+### 2. 浏览路线
 
-1. 打开路线查看所有阶段
-2. 点击阶段卡片 → 弹出详情框，查看任务、资源、记忆卡
-3. 勾选任务标记完成
-4. 完成阶段测验以解锁下一阶段
-5. 资源链接过期时可直接点击编辑/删除，或手动添加新资源
+1. 详情页按章节横向排列，每章为一列
+2. 点击任务标题展开 2–4 条要点与对应学习资料
+3. 右上 **"全部资源"** 按章节汇总全部资料链接
+4. 勾选任务标记完成，进度自动更新
 
-### 学习与复习抽认卡
+### 3. AI 伙伴浮窗
 
-1. 进入 **记忆卡片** 页面
-2. **先学习**：逐张浏览新卡片，理解内容后点"已学会" — 卡片进入复习队列
-3. **后复习**：到期卡片按 SM-2 间隔重复算法出现，根据记忆程度评分
-4. 评分提示：😢完全忘记 → 🤩完美回答，hover 可查看详细评分说明
+1. 任意页面右下角都有一个圆形入口，点击展开聊天面板
+2. 在路线详情页点阶段或任务上的 **"问 AI"**，会自动绑定当前位置
+3. 其他页面下，浮窗作为通用问答窗口，沿用上次位置与展开状态
+4. 浮窗可拖动到屏幕任意位置，松手即定位；下次打开仍在原位
+5. 需要长对话与历史查看时，进入 **AI 导师** 全屏页，与浮窗共用同一上下文
 
-### AI 导师
+### 4. 生成后优化
 
-1. 进入 **AI 导师** 页面
-2. 输入问题并发送
-3. 获取关于学习内容的个性化帮助（流式回复）
+1. 选中整体、阶段或任务，点击 **评价**
+2. 写下具体反馈（例如：本章节奏过快、该任务希望补充示例）
+3. AI 重绘对应部分，并保留同名任务的完成进度
+
+### 5. 收藏夹
+
+任务和资源支持收藏；收藏页直接展示内容与链接，无需展开路线
+
+---
+
+## 🧠 设计要点
+
+- **访谈优于问卷**：通过多轮对话由 AI 主动追问，能挖掘出"每周几小时""截止时间"等硬性问题无法反映的真实偏好。
+- **位置上下文**：浮窗始终知道当前所在阶段、任务与已完成进度，回答结合当前路径与前置依赖。
+- **结构自适应**：阶段数、任务数、要点数量均由 AI 按主题广度与期望深度决定，不设硬性上限。
+- **局部优化**：评价只重绘被选中的粒度，已完成进度不会因路线微调而丢失。
+- **手稿视觉**：全局使用墨黑/朱砂/米色/金箔四色系，罗马章节号、印章、金箔分隔线统一应用。
 
 ---
 
@@ -237,8 +258,7 @@ MIT © RoadmapAI
 - 应用语言界面为**中文**
 - API 密钥存储在本地 SQLite 数据库中，不会上传到任何服务器
 - 数据库文件位于系统应用数据目录（macOS: `~/Library/Application Support/com.roadmapai.app/`）
-- 内置学习计时器（Pomodoro），关闭应用后计时状态自动保存
 - ⚠️ 推理模型（如 MiniMax-M3）不适合路线生成，会产生大量推理内容导致 JSON 截断，建议用于 AI 导师对话
 - ⚠️ 项目仍存在不少 bug，会逐步修复，欢迎提 issue 反馈
-- 无测试、无 CI — TypeScript 严格模式在 `npm run build` 时进行类型检查
+- 无测试、无 CI — TypeScript 严格模式在 `npm run build` 时进行类型检查；Rust 侧要求 `cargo check` 0 warnings
 - 📸 README 预览图由 [`docs/screenshots/`](docs/screenshots/) 提供；准备好截图后只需将同名文件覆盖即可在 README 看到效果（推荐 16:9，深色主题）
