@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 
-export type FavoriteType = 'task' | 'resource' | 'message' | 'flashcard';
+export type FavoriteType = 'task' | 'resource' | 'message';
 
 export interface Favorite {
   id: string;

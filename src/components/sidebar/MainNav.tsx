@@ -2,7 +2,6 @@ import { NavLink } from 'react-router-dom';
 import {
   Home,
   PlusCircle,
-  Brain,
   Bot,
   Star,
   BarChart3,
@@ -15,21 +14,18 @@ interface NavItem {
   icon: LucideIcon;
   label: string;
   chapter: string;
-  badgeKey?: 'flashcards';
 }
 
 const navItems: NavItem[] = [
-  { to: '/',           icon: Home,        label: '首页',     chapter: 'I' },
-  { to: '/create',     icon: PlusCircle,  label: '创建路线', chapter: 'II' },
-  { to: '/flashcards', icon: Brain,       label: '记忆卡片', chapter: 'III', badgeKey: 'flashcards' },
-  { to: '/tutor',      icon: Bot,         label: 'AI 导师',  chapter: 'IV' },
-  { to: '/favorites',  icon: Star,        label: '收藏夹',   chapter: 'V' },
-  { to: '/stats',      icon: BarChart3,   label: '学习统计', chapter: 'VI' },
+  { to: '/',          icon: Home,       label: '首页',     chapter: 'I' },
+  { to: '/create',    icon: PlusCircle, label: '创建路线', chapter: 'II' },
+  { to: '/tutor',     icon: Bot,        label: 'AI 导师',  chapter: 'III' },
+  { to: '/favorites', icon: Star,       label: '收藏夹',   chapter: 'IV' },
+  { to: '/stats',     icon: BarChart3,  label: '学习统计', chapter: 'V' },
 ];
 
 export default function MainNav() {
   const isCollapsed = useSidebarStore((s) => s.isCollapsed);
-  const todo = useSidebarStore((s) => s.todayTodo);
 
   return (
     <nav className="flex-1 px-3 py-2 overflow-y-auto">
@@ -40,8 +36,7 @@ export default function MainNav() {
         </div>
       )}
       <div className={isCollapsed ? 'space-y-1' : 'border-t border-ink-200/60 dark:border-ink-700/40'}>
-        {navItems.map(({ to, icon: Icon, label, chapter, badgeKey }) => {
-          const count = badgeKey === 'flashcards' ? todo.flashcards : 0;
+        {navItems.map(({ to, icon: Icon, label, chapter }) => {
           return (
             <NavLink
               key={to}
@@ -70,16 +65,6 @@ export default function MainNav() {
                   <Icon size={17} className="flex-shrink-0" />
                   {!isCollapsed && (
                     <span className="text-[13px] font-display truncate tracking-tight">{label}</span>
-                  )}
-                  {count > 0 && !isCollapsed && (
-                    <span className="ml-auto font-mono text-[10px] font-semibold text-seal-500 tabular-nums">
-                      {count > 99 ? '99+' : count}
-                    </span>
-                  )}
-                  {count > 0 && isCollapsed && (
-                    <span className="absolute top-0.5 right-0.5 min-w-[14px] h-[14px] px-1 text-[9px] font-mono font-semibold text-paper bg-seal-400 flex items-center justify-center">
-                      {count > 99 ? '99+' : count}
-                    </span>
                   )}
                 </>
               )}

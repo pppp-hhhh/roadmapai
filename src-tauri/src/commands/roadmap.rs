@@ -1,27 +1,26 @@
-use crate::models::{Flashcard, Quiz, Resource, ResourceResponse, Roadmap, RoadmapRequest, RoadmapResponse, Stage, Task};
+use crate::models::{
+    Resource, ResourceResponse, Roadmap, RoadmapRequest, RoadmapResponse, Stage, Task,
+};
 
 use crate::services::parallel::{
-    FlashcardItem, StageDetail, StageOutlineOnly, TaskContent, TaskDetail,
+    json_array_string, parse_string_array, StageDetail, StageOutlineOnly, TaskContent, TaskDetail,
 };
 use crate::services::roadmap_parser::{
-    parse_outline_response, parse_stage_outline_only_response,
-    parse_task_content_response,
-};
-use crate::services::{
-    build_outline_prompt, build_stage_outline_only_prompt,
-    build_task_content_prompt,
+    parse_outline_response, parse_stage_outline_only_response, parse_task_content_response,
 };
 use crate::services::tavily;
+use crate::services::{
+    build_outline_prompt, build_stage_outline_only_prompt, build_task_content_prompt,
+};
 use crate::AppState;
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use serde::Deserialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 use tauri::{Emitter, State};
 use tracing::{error, info, warn};
 use uuid::Uuid;
-
 
 async fn wait_cancelled(flag: &AtomicUsize, version: usize) {
     while flag.load(Ordering::SeqCst) == version {
@@ -94,15 +93,23 @@ async fn call_openai_compatible(
         .map_err(|e| format!("\"{}\" 请求失败：{}", model, e))?;
 
     if !resp.status().is_success() {
+        let status = resp.status();
         let err_text = resp.text().await.unwrap_or_default();
-        return Err(format!("API 错误：{}", err_text));
+        return Err(format!("API 错误 ({}): {}", status, err_text));
     }
 
-    let raw = resp.text().await.map_err(|e| format!("读取响应失败：{}", e))?;
-    info!("  📥 响应接收 ← 耗时 {:.1}s, 长度 {} 字符", t0.elapsed().as_secs_f64(), raw.len());
+    let raw = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败：{}", e))?;
+    info!(
+        "  📥 响应接收 ← 耗时 {:.1}s, 长度 {} 字符",
+        t0.elapsed().as_secs_f64(),
+        raw.len()
+    );
 
-    let chat_value: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("解析响应 JSON 失败：{}", e))?;
+    let chat_value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("解析响应 JSON 失败：{}", e))?;
 
     let finish_reason = chat_value["choices"][0]["finish_reason"]
         .as_str()
@@ -115,7 +122,10 @@ async fn call_openai_compatible(
         .as_str()
         .unwrap_or("");
     if !reasoning.is_empty() {
-        info!("  💭 模型输出了 {} 字符推理内容（不计入最终结果）", reasoning.len());
+        info!(
+            "  💭 模型输出了 {} 字符推理内容（不计入最终结果）",
+            reasoning.len()
+        );
     }
 
     chat_value["choices"][0]["message"]["content"]
@@ -159,19 +169,25 @@ async fn call_claude(
         .map_err(|e| format!("Claude 请求失败：{}", e))?;
 
     if !resp.status().is_success() {
+        let status = resp.status();
         let err_text = resp.text().await.unwrap_or_default();
-        return Err(format!("Claude API 错误：{}", err_text));
+        return Err(format!("Claude API 错误 ({}): {}", status, err_text));
     }
 
-    let raw = resp.text().await.map_err(|e| format!("读取 Claude 响应失败：{}", e))?;
-    info!("  📥 响应接收 ← 耗时 {:.1}s, 长度 {} 字符", t0.elapsed().as_secs_f64(), raw.len());
+    let raw = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取 Claude 响应失败：{}", e))?;
+    info!(
+        "  📥 响应接收 ← 耗时 {:.1}s, 长度 {} 字符",
+        t0.elapsed().as_secs_f64(),
+        raw.len()
+    );
 
-    let value: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("解析 Claude 响应 JSON 失败：{}", e))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("解析 Claude 响应 JSON 失败：{}", e))?;
 
-    let stop_reason = value["stop_reason"]
-        .as_str()
-        .unwrap_or("unknown");
+    let stop_reason = value["stop_reason"].as_str().unwrap_or("unknown");
     if stop_reason == "max_tokens" {
         let err = "Claude 因 token 限制截断了响应 (stop_reason=max_tokens)，返回内容不完整";
         error!("⚠ {}", err);
@@ -196,22 +212,96 @@ async fn call_ai(
 ) -> Result<String, String> {
     match provider_type.to_lowercase().as_str() {
         "anthropic" | "claude" => {
-            call_claude(client, api_key, model, system_prompt, user_prompt, max_tokens).await
+            call_claude(
+                client,
+                api_key,
+                model,
+                system_prompt,
+                user_prompt,
+                max_tokens,
+            )
+            .await
         }
         _ => {
-            call_openai_compatible(client, base_url, model, api_key, system_prompt, user_prompt, max_tokens).await
+            call_openai_compatible(
+                client,
+                base_url,
+                model,
+                api_key,
+                system_prompt,
+                user_prompt,
+                max_tokens,
+            )
+            .await
         }
     }
+}
+
+const MAX_AI_RETRIES: u32 = 2;
+
+fn is_transient_ai_error(err: &str) -> bool {
+    let lower = err.to_lowercase();
+    lower.contains("internal server error")
+        || lower.contains("bad gateway")
+        || lower.contains("service unavailable")
+        || lower.contains("gateway timeout")
+        || lower.contains("too many requests")
+        || lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("超时")
+        || lower.contains("请求失败")
+        || lower.contains("api 错误 (5")
+        || lower.contains("api 错误 (429")
+        || lower.contains("claude api 错误 (5")
+        || lower.contains("claude api 错误 (429")
+}
+
+pub(crate) async fn call_ai_with_retry(
+    client: &reqwest::Client,
+    provider_type: &str,
+    base_url: &str,
+    model: &str,
+    api_key: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    max_tokens: u32,
+) -> Result<String, String> {
+    for attempt in 0..=MAX_AI_RETRIES {
+        match call_ai(
+            client,
+            provider_type,
+            base_url,
+            model,
+            api_key,
+            system_prompt,
+            user_prompt,
+            max_tokens,
+        )
+        .await
+        {
+            Ok(r) => return Ok(r),
+            Err(e) if attempt < MAX_AI_RETRIES && is_transient_ai_error(&e) => {
+                let delay_secs = 1 + attempt as u64;
+                warn!(
+                    "  ⚠ AI 调用失败（{}/{}），{delay_secs}s 后重试：{e}",
+                    attempt + 1,
+                    MAX_AI_RETRIES + 1
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err("AI 调用重试已耗尽".to_string())
 }
 
 fn stage_details_to_models(
     roadmap_id: String,
     details: Vec<StageDetail>,
-) -> (Vec<Stage>, Vec<Task>, Vec<Resource>, Vec<Flashcard>) {
+) -> (Vec<Stage>, Vec<Task>, Vec<Resource>) {
     let mut stages = Vec::new();
     let mut tasks = Vec::new();
     let mut resources = Vec::new();
-    let mut flashcards = Vec::new();
 
     for detail in details {
         let stage_id = Uuid::new_v4().to_string();
@@ -221,7 +311,7 @@ fn stage_details_to_models(
             None
         };
 
-        let stage_type = if detail.order == stages.len() + 1 && detail.order > 5 {
+        let stage_type = if detail.tasks.iter().any(|t| t.task_type == "project") {
             "project".to_string()
         } else {
             "learning".to_string()
@@ -235,9 +325,7 @@ fn stage_details_to_models(
             objective: detail.description,
             estimated_hours: 4.0,
             stage_type,
-            is_locked: detail.order > 1 && !detail.is_fallback,
-            quiz_json: None,
-            pass_threshold: 0.7,
+            prerequisites: json_array_string(&detail.prerequisites),
             metadata,
         };
         stages.push(stage);
@@ -247,11 +335,13 @@ fn stage_details_to_models(
             let task = Task {
                 id: task_id.clone(),
                 stage_id: stage_id.clone(),
+                order: task_detail.order as i32,
                 title: task_detail.title,
                 content: task_detail.content,
+                points: json_array_string(&task_detail.points),
+                prerequisites: json_array_string(&task_detail.prerequisites),
                 task_type: task_detail.task_type,
-                code_example: task_detail.code_example,
-                exercise: task_detail.exercise,
+                example: task_detail.example,
                 is_completed: false,
                 completed_at: None,
             };
@@ -269,14 +359,18 @@ fn stage_details_to_models(
                 resources.push(resource);
             }
         }
-
-        for fc_detail in detail.flashcards {
-            let flashcard = Flashcard::new(roadmap_id.clone(), fc_detail.question, fc_detail.answer);
-            flashcards.push(flashcard);
-        }
     }
 
-    (stages, tasks, resources, flashcards)
+    (stages, tasks, resources)
+}
+
+fn merge_unique(mut first: Vec<String>, second: Vec<String>) -> Vec<String> {
+    for item in second {
+        if !first.contains(&item) {
+            first.push(item);
+        }
+    }
+    first
 }
 
 #[tauri::command]
@@ -288,15 +382,24 @@ pub async fn generate_roadmap(
     let total_t0 = Instant::now();
     let cancel_version = state.gen_cancel.load(Ordering::SeqCst);
     info!("========== 开始生成学习路线（并行模式）==========");
-    info!("主题：「{}」| 水平：{} | 目标：{}", params.topic, params.level, params.goal);
+    info!(
+        "主题：「{}」| 水平：{} | 目标：{}",
+        params.topic, params.level, params.goal
+    );
 
     // 1. Load settings + API key + custom config (single lock acquisition)
     let (settings, api_key, (base_url_opt, model_opt, provider_type_opt)) = {
         let db = state.db.lock().await;
         let settings = db.get_settings().await?;
-        let api_key = db.get_api_key(&settings.ai_provider)
+        let api_key = db
+            .get_api_key(&settings.ai_provider)
             .await?
-            .ok_or_else(|| format!("{} 的 API Key 未找到，请在设置中配置 API Key", settings.ai_provider))?;
+            .ok_or_else(|| {
+                format!(
+                    "{} 的 API Key 未找到，请在设置中配置 API Key",
+                    settings.ai_provider
+                )
+            })?;
         let cfg = db.get_api_config(&settings.ai_provider).await?;
         let (base_url, model, provider_type) = match cfg {
             Some(c) => (Some(c.base_url), Some(c.model), Some(c.provider_type)),
@@ -306,12 +409,14 @@ pub async fn generate_roadmap(
     };
 
     // 决定 provider_type：优先用保存的，否则按 settings.ai_provider 推断
-    let provider_type = provider_type_opt
-        .clone()
-        .unwrap_or_else(|| {
-            let p = settings.ai_provider.to_lowercase();
-            if p == "claude" || p == "anthropic" { "anthropic".to_string() } else { "openai".to_string() }
-        });
+    let provider_type = provider_type_opt.clone().unwrap_or_else(|| {
+        let p = settings.ai_provider.to_lowercase();
+        if p == "claude" || p == "anthropic" {
+            "anthropic".to_string()
+        } else {
+            "openai".to_string()
+        }
+    });
 
     // Claude 使用自己的官方端点和默认模型
     let (base_url, model) = if provider_type == "anthropic" {
@@ -333,19 +438,35 @@ pub async fn generate_roadmap(
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败：{}", e))?;
 
-    info!("模型：{} | base_url：{} | provider：{} | provider_type：{} | 并发数：6", model, base_url, provider, provider_type);
+    info!(
+        "模型：{} | base_url：{} | provider：{} | provider_type：{} | 并发数：6",
+        model, base_url, provider, provider_type
+    );
 
     // 2. Layer 1: Coordinator — generate outline
     info!("");
     info!("═══ Layer 1: Outline（大纲生成）═══");
-    emit_roadmap_progress(&app_handle, "started", 0, 0, None, "正在生成学习路线大纲...");
+    emit_roadmap_progress(
+        &app_handle,
+        "started",
+        0,
+        0,
+        None,
+        "正在生成学习路线大纲...",
+    );
 
     // 3. Coordinator: generate outline
     info!("→ [大纲] 正在请求 AI 生成大纲...");
     let outline_t0 = Instant::now();
-    let outline_prompt = build_outline_prompt(&params.topic, &params.goal, &params.level, &params.difficulty);
+    let outline_prompt = build_outline_prompt(
+        &params.topic,
+        &params.goal,
+        &params.level,
+        &params.difficulty,
+        params.profile.as_deref(),
+    );
     let outline_raw = tokio::select! {
-        r = call_ai(
+        r = call_ai_with_retry(
             &client, &provider_type, &base_url, &model, &api_key,
             "你是一位学习路线图设计专家。始终返回符合要求格式的有效 JSON。",
             &outline_prompt, 4000,
@@ -356,25 +477,38 @@ pub async fn generate_roadmap(
         }
     };
 
-    info!("→ [大纲] 响应已接收，耗时 {:.1}s，开始解析...", outline_t0.elapsed().as_secs_f64());
+    info!(
+        "→ [大纲] 响应已接收，耗时 {:.1}s，开始解析...",
+        outline_t0.elapsed().as_secs_f64()
+    );
 
-    let outline_result = parse_outline_response(&outline_raw)
-        .map_err(|e| format!("解析大纲失败：{}", e))?;
+    let outline_result =
+        parse_outline_response(&outline_raw).map_err(|e| format!("解析大纲失败：{}", e))?;
 
     let outlines = outline_result.stages;
     let ai_weekly_hours = outline_result.suggested_weekly_hours;
     let ai_total_weeks = outline_result.suggested_total_weeks;
     let total = outlines.len();
     info!("→ [大纲] 解析成功！共 {} 个阶段", total);
-    info!("→ [大纲] AI 建议：{}/周 × {}周 = {:.0}h 总学习时间", ai_weekly_hours, ai_total_weeks, outline_result.estimated_total_hours);
+    info!(
+        "→ [大纲] AI 建议：{}/周 × {}周 = {:.0}h 总学习时间",
+        ai_weekly_hours, ai_total_weeks, outline_result.estimated_total_hours
+    );
     for o in &outlines {
         info!("    阶段{}: {}", o.order, o.title);
     }
 
     // 4. Layer 2: Stage skeletons — N agents parallel
     emit_roadmap_progress(
-        &app_handle, "outline_complete", 0, total, None,
-        &format!("大纲生成完成，共 {} 个阶段，AI 建议 {}/周 × {}周", total, ai_weekly_hours, ai_total_weeks),
+        &app_handle,
+        "outline_complete",
+        0,
+        total,
+        None,
+        &format!(
+            "大纲生成完成，共 {} 个阶段，AI 建议 {}/周 × {}周",
+            total, ai_weekly_hours, ai_total_weeks
+        ),
     );
 
     info!("");
@@ -385,17 +519,21 @@ pub async fn generate_roadmap(
         return Err("生成已取消".to_string());
     }
 
-    let _all_titles: Vec<String> = outlines.iter().map(|o| o.title.clone()).collect();
+    let all_titles: Vec<String> = outlines.iter().map(|o| o.title.clone()).collect();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(6));
     let layer_t0 = Instant::now();
 
     // ============================================================
     // LAYER 2: 阶段骨架 — N 个 Agent 并行，每个生成 task 列表
     // ============================================================
-    info!("→ [Layer 2] 启动 {} 个阶段骨架 Agent（并发上限 6）...", total);
+    info!(
+        "→ [Layer 2] 启动 {} 个阶段骨架 Agent（并发上限 6）...",
+        total
+    );
 
     let mut stage_skeletons: Vec<StageOutlineOnly> = Vec::new();
-    let mut skeleton_handles: Vec<tokio::task::JoinHandle<Result<StageOutlineOnly, String>>> = Vec::new();
+    let mut skeleton_handles: Vec<tokio::task::JoinHandle<Result<StageOutlineOnly, String>>> =
+        Vec::new();
     let skeleton_done = Arc::new(AtomicUsize::new(0));
     let total_skeletons = total;
     for outline in outlines {
@@ -412,31 +550,64 @@ pub async fn generate_roadmap(
         let order = outline.order;
         let title = outline.title.clone();
         let brief = outline.brief.clone();
+        let all_titles = all_titles.clone();
+        let stage_prerequisites: Vec<String> = all_titles
+            .iter()
+            .take_while(|t| **t != title)
+            .cloned()
+            .collect();
 
         skeleton_handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("信号量获取失败");
             let t0 = Instant::now();
             info!("  [L2-阶段{}] 启动", order);
             emit_roadmap_progress(
-                &app, "stage_started", 0, total_skeletons, Some(&title),
+                &app,
+                "stage_started",
+                0,
+                total_skeletons,
+                Some(&title),
                 &format!("正在生成第 {order}/{total_skeletons} 阶段骨架 · {title}"),
             );
 
-            let prompt = build_stage_outline_only_prompt(&topic, &level, order, &title, &brief);
-            let raw = match call_ai(
-                &client, &provider_type_t, &base_url, &model, &api_key,
+            let prompt = build_stage_outline_only_prompt(
+                &topic,
+                &level,
+                order,
+                &title,
+                &brief,
+                &all_titles,
+                &stage_prerequisites,
+            );
+            let raw = match call_ai_with_retry(
+                &client,
+                &provider_type_t,
+                &base_url,
+                &model,
+                &api_key,
                 "你是学习路线图设计专家。严格按 JSON 格式返回。",
-                &prompt, 3000,
-            ).await {
+                &prompt,
+                3000,
+            )
+            .await
+            {
                 Ok(r) => Some(r),
-                Err(e) => { warn!("  [L2-阶段{}] ✘ AI 调用失败：{}", order, e); None }
+                Err(e) => {
+                    warn!("  [L2-阶段{}] ✘ AI 调用失败：{}", order, e);
+                    None
+                }
             };
 
             let result = if let Some(raw) = raw {
                 match parse_stage_outline_only_response(&raw, order, &title) {
                     Ok(mut s) => {
                         s.title = title.clone();
-                        info!("  [L2-阶段{}] ✔ {} 任务骨架 | {:.1}s", order, s.task_outlines.len(), t0.elapsed().as_secs_f64());
+                        info!(
+                            "  [L2-阶段{}] ✔ {} 任务骨架 | {:.1}s",
+                            order,
+                            s.task_outlines.len(),
+                            t0.elapsed().as_secs_f64()
+                        );
                         Ok(s)
                     }
                     Err(e) => {
@@ -452,11 +623,15 @@ pub async fn generate_roadmap(
                 Ok(s) => s,
                 Err(e) => {
                     // Fallback: empty task outlines, aggregation will make it a proper fallback stage
-                    warn!("  [L2-阶段{}] ⚠ AI 生成失败（{}），阶段将标记为占位", order, e);
+                    warn!(
+                        "  [L2-阶段{}] ⚠ AI 生成失败（{}），阶段将标记为占位",
+                        order, e
+                    );
                     StageOutlineOnly {
                         order,
                         title: title.clone(),
                         description: format!("本阶段目标：{}", brief),
+                        prerequisites: vec![],
                         task_outlines: vec![],
                     }
                 }
@@ -464,7 +639,11 @@ pub async fn generate_roadmap(
 
             let done = done_counter.fetch_add(1, Ordering::Relaxed) + 1;
             emit_roadmap_progress(
-                &app, "stage_completed", done, total_skeletons, Some(&title),
+                &app,
+                "stage_completed",
+                done,
+                total_skeletons,
+                Some(&title),
                 &format!("阶段骨架 {done}/{total_skeletons} · {title}"),
             );
             Ok(result)
@@ -492,7 +671,7 @@ pub async fn generate_roadmap(
     info!("→ [Layer 2] 完成：{} 阶段骨架", stage_skeletons.len());
 
     // ============================================================
-    // LAYER 3: Task content + resources + flashcards — M agents parallel
+    // LAYER 3: Task content + resources — M agents parallel
     // ============================================================
     let total_task_jobs: usize = stage_skeletons.iter().map(|s| s.task_outlines.len()).sum();
     info!("");
@@ -516,42 +695,67 @@ pub async fn generate_roadmap(
             let provider_type_t = provider_type.clone();
             let app = app_handle.clone();
             let done_counter = task_done.clone();
+            let topic = params.topic.clone();
             let stage_title = stage.title.clone();
             let stage_desc = stage.description.clone();
             let task_title = task.title.clone();
             let task_type = task.task_type.clone();
+            let prerequisites = task.prerequisites.clone();
             let order = task.order;
 
             content_handles.push(tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("信号量获取失败");
                 let t0 = Instant::now();
-                let prompt = build_task_content_prompt(&stage_title, &stage_title, &stage_desc, &task_title, &task_type);
-                let raw = match call_ai(
-                    &client, &provider_type_t, &base_url, &model, &api_key,
+                let prompt = build_task_content_prompt(
+                    &topic,
+                    &stage_title,
+                    &stage_desc,
+                    &task_title,
+                    &task_type,
+                    &prerequisites,
+                );
+                let raw = match call_ai_with_retry(
+                    &client,
+                    &provider_type_t,
+                    &base_url,
+                    &model,
+                    &api_key,
                     "你是学习内容专家。严格按 JSON 格式返回。不要输出任何思考/推理,直接返回 JSON。",
-                    &prompt, 5000,
-                ).await {
+                    &prompt,
+                    5000,
+                )
+                .await
+                {
                     Ok(r) => Some(r),
-                    Err(e) => { warn!("  [L3-任务{}] ✘ AI 调用失败：{}", order, e); None }
+                    Err(e) => {
+                        warn!("  [L3-任务{}] ✘ AI 调用失败：{}", order, e);
+                        None
+                    }
                 };
 
                 let result = match raw {
-                    Some(raw) => match parse_task_content_response(&raw, order, &task_title, &task_type) {
-                        Ok(c) => {
-                            info!("  [L3-任务{}] ✔ {:.1}s", order, t0.elapsed().as_secs_f64());
-                            Ok(c)
+                    Some(raw) => {
+                        match parse_task_content_response(&raw, order, &task_title, &task_type) {
+                            Ok(c) => {
+                                info!("  [L3-任务{}] ✔ {:.1}s", order, t0.elapsed().as_secs_f64());
+                                Ok(c)
+                            }
+                            Err(e) => {
+                                warn!("  [L3-任务{}] ✘ 解析失败：{}", order, e);
+                                Err(format!("解析失败：{}", e))
+                            }
                         }
-                        Err(e) => {
-                            warn!("  [L3-任务{}] ✘ 解析失败：{}", order, e);
-                            Err(format!("解析失败：{}", e))
-                        }
-                    },
+                    }
                     None => Err("AI 调用失败".to_string()),
                 };
 
                 let done = done_counter.fetch_add(1, Ordering::Relaxed) + 1;
                 emit_roadmap_progress(
-                    &app, "stage_completed", done, total_task_jobs, Some(&task_title),
+                    &app,
+                    "stage_completed",
+                    done,
+                    total_task_jobs,
+                    Some(&task_title),
                     &format!("任务内容 {done}/{total_task_jobs} · {task_title}"),
                 );
                 result
@@ -583,28 +787,39 @@ pub async fn generate_roadmap(
     // 聚合 + DB 写入
     // ============================================================
     let mut stage_details: Vec<StageDetail> = Vec::new();
-    let fallback_count = stage_skeletons.iter().filter(|s| s.task_outlines.is_empty()).count();
+    let fallback_count = stage_skeletons
+        .iter()
+        .filter(|s| s.task_outlines.is_empty())
+        .count();
     let total_tasks_built: usize = task_contents.len();
     let total_resources: usize = task_contents.iter().map(|c| c.resources.len()).sum();
-    let total_flashcards: usize = task_contents.iter().map(|c| c.flashcards.len()).sum();
     info!("");
     info!("══════════════════════════════════════");
-    info!("  📊 三层汇总：{} 阶段, {} 任务, {} 资源, {} 记忆卡, {} 占位 | 总耗时 {:.1}s",
-        stage_skeletons.len(), total_tasks_built, total_resources, total_flashcards, fallback_count, layer_t0.elapsed().as_secs_f64());
+    info!(
+        "  📊 三层汇总：{} 阶段, {} 任务, {} 资源, {} 占位 | 总耗时 {:.1}s",
+        stage_skeletons.len(),
+        total_tasks_built,
+        total_resources,
+        fallback_count,
+        layer_t0.elapsed().as_secs_f64()
+    );
     info!("══════════════════════════════════════");
 
     for stage in &stage_skeletons {
         let mut tasks: Vec<TaskDetail> = Vec::new();
-        let mut all_flashcards: Vec<FlashcardItem> = Vec::new();
         for task_outline in &stage.task_outlines {
             if let Some(content) = task_contents.iter().find(|c| c.title == task_outline.title) {
-                all_flashcards.extend(content.flashcards.clone());
                 tasks.push(TaskDetail {
+                    order: task_outline.order,
                     title: content.title.clone(),
                     content: content.content.clone(),
+                    points: content.points.clone(),
+                    prerequisites: merge_unique(
+                        task_outline.prerequisites.clone(),
+                        content.prerequisites.clone(),
+                    ),
                     task_type: content.task_type.clone(),
-                    code_example: content.code_example.clone(),
-                    exercise: content.exercise.clone(),
+                    example: content.example.clone(),
                     resources: content.resources.clone(),
                 });
             }
@@ -621,8 +836,8 @@ pub async fn generate_roadmap(
                 order: stage.order,
                 title: stage.title.clone(),
                 description: stage.description.clone(),
+                prerequisites: stage.prerequisites.clone(),
                 tasks,
-                flashcards: all_flashcards,
                 is_fallback: false,
             });
         }
@@ -639,10 +854,17 @@ pub async fn generate_roadmap(
     if let Some(tavily_key) = &tavily_api_key {
         if !tavily_key.is_empty() {
             emit_roadmap_progress(
-                &app_handle, "enriching", 0, stage_details.len(), None,
+                &app_handle,
+                "enriching",
+                0,
+                stage_details.len(),
+                None,
                 "正在搜索真实学习资源...",
             );
-            info!("→ [Tavily] 开始为 {} 个阶段搜索学习资源", stage_details.len());
+            info!(
+                "→ [Tavily] 开始为 {} 个阶段搜索学习资源",
+                stage_details.len()
+            );
 
             let semaphore = Arc::new(tokio::sync::Semaphore::new(4));
             let client = reqwest::Client::builder()
@@ -668,7 +890,9 @@ pub async fn generate_roadmap(
                 }
             }
 
-            let mut enriched_results: Vec<Result<Vec<crate::services::parallel::ResourceDetail>, String>> = vec![];
+            let mut enriched_results: Vec<
+                Result<Vec<crate::services::parallel::ResourceDetail>, String>,
+            > = vec![];
             let mut enrich_handles = enrich_handles.into_iter();
             while let Some(h) = enrich_handles.next() {
                 tokio::select! {
@@ -708,7 +932,11 @@ pub async fn generate_roadmap(
             info!("→ [Tavily] 资源搜索完成");
 
             emit_roadmap_progress(
-                &app_handle, "enrich_done", stage_details.len(), stage_details.len(), None,
+                &app_handle,
+                "enrich_done",
+                stage_details.len(),
+                stage_details.len(),
+                None,
                 "资源搜索完成，正在保存...",
             );
         }
@@ -726,9 +954,28 @@ pub async fn generate_roadmap(
     let roadmap_title = format!("{} 学习路线", params.topic);
     let roadmap_desc = format!(
         "AI 建议 {}/周 × {}周，共 {:.0} 小时 | {} 个阶段，{} 个任务",
-        ai_weekly_hours, ai_total_weeks, estimated_hours,
-        total, stage_details.iter().map(|d| d.tasks.len()).sum::<usize>(),
+        ai_weekly_hours,
+        ai_total_weeks,
+        estimated_hours,
+        total,
+        stage_details.iter().map(|d| d.tasks.len()).sum::<usize>(),
     );
+
+    let mut roadmap_metadata = serde_json::json!({
+        "topic": params.topic,
+        "level": params.level,
+        "goal": params.goal,
+        "difficulty": params.difficulty,
+    });
+    if let Some(profile) = params
+        .profile
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        roadmap_metadata["profile"] = serde_json::Value::String(profile.to_string());
+    }
+    let roadmap_metadata = roadmap_metadata.to_string();
 
     let roadmap = Roadmap {
         id: roadmap_id.clone(),
@@ -736,9 +983,10 @@ pub async fn generate_roadmap(
         description: roadmap_desc,
         estimated_total_hours: estimated_hours,
         created_at: Utc::now(),
+        metadata: Some(roadmap_metadata),
     };
 
-    let (stages, tasks, resources, flashcards) = stage_details_to_models(roadmap_id.clone(), stage_details);
+    let (stages, tasks, resources) = stage_details_to_models(roadmap_id.clone(), stage_details);
 
     // 8. Insert into DB
     info!("→ [数据库] 开始写入...");
@@ -762,33 +1010,41 @@ pub async fn generate_roadmap(
     }
     info!("  ✓ resources 表写入完成 ({} 条)", resources.len());
 
-    for flashcard in &flashcards {
-        db.create_flashcard(flashcard).await?;
-    }
-    info!("  ✓ flashcards 表写入完成 ({} 条)", flashcards.len());
     drop(db);
-    info!("→ [数据库] 写入完成，耗时 {:.1}s", db_t0.elapsed().as_secs_f64());
+    info!(
+        "→ [数据库] 写入完成，耗时 {:.1}s",
+        db_t0.elapsed().as_secs_f64()
+    );
 
     info!("→ [生成] 路线 ID：{}", roadmap.id);
-    info!("→ [生成] 总耗时 {:.1}s | 阶段:{}, 任务:{}, 资源:{}, 记忆卡:{}, 占位:{}",
-        total_t0.elapsed().as_secs_f64(), stages.len(), tasks.len(), resources.len(), flashcards.len(), fallback_count);
+    info!(
+        "→ [生成] 总耗时 {:.1}s | 阶段:{}, 任务:{}, 资源:{}, 占位:{}",
+        total_t0.elapsed().as_secs_f64(),
+        stages.len(),
+        tasks.len(),
+        resources.len(),
+        fallback_count
+    );
 
     // 9. Emit completed
     emit_roadmap_progress(
-        &app_handle, "completed", total, total, None,
+        &app_handle,
+        "completed",
+        total,
+        total,
+        None,
         &format!("学习路线「{}」生成完成！", roadmap.title),
     );
 
     // 10. Build response
     let mut stage_responses = Vec::new();
     for stage in &stages {
-        let stage_tasks: Vec<_> = tasks.iter()
-            .filter(|t| t.stage_id == stage.id)
-            .collect();
+        let stage_tasks: Vec<_> = tasks.iter().filter(|t| t.stage_id == stage.id).collect();
 
         let mut task_responses = Vec::new();
         for task in stage_tasks {
-            let task_resources: Vec<ResourceResponse> = resources.iter()
+            let task_resources: Vec<ResourceResponse> = resources
+                .iter()
                 .filter(|r| r.task_id == task.id)
                 .map(|r| ResourceResponse {
                     id: r.id.clone(),
@@ -801,11 +1057,15 @@ pub async fn generate_roadmap(
 
             task_responses.push(crate::models::TaskResponse {
                 id: task.id.clone(),
+                order: task.order,
                 title: task.title.clone(),
                 content: task.content.clone(),
+                points: parse_string_array(&task.points),
+                prerequisites: parse_string_array(&task.prerequisites),
                 task_type: task.task_type.clone(),
-                code_example: task.code_example.clone(),
-                exercise: task.exercise.clone(),
+                example: task.example.clone(),
+                is_completed: task.is_completed,
+                completed_at: task.completed_at,
                 resources: task_resources,
             });
         }
@@ -815,13 +1075,16 @@ pub async fn generate_roadmap(
             order: stage.order,
             name: stage.name.clone(),
             objective: stage.objective.clone(),
+            prerequisites: parse_string_array(&stage.prerequisites),
             estimated_hours: stage.estimated_hours,
             stage_type: stage.stage_type.clone(),
-            is_locked: stage.is_locked,
-            is_fallback: stage.metadata.as_deref().and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()).and_then(|v| v["is_fallback"].as_bool()).unwrap_or(false),
-            pass_threshold: stage.pass_threshold,
+            is_fallback: stage
+                .metadata
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                .and_then(|v| v["is_fallback"].as_bool())
+                .unwrap_or(false),
             tasks: task_responses,
-            quiz: None,
         });
     }
 
@@ -834,25 +1097,17 @@ pub async fn generate_roadmap(
     })
 }
 
-#[tauri::command]
-pub async fn get_roadmap(
-    state: State<'_, AppState>,
-    id: String,
+pub(crate) async fn build_roadmap_response(
+    db: &crate::Database,
+    roadmap_id: &str,
 ) -> Result<RoadmapResponse, String> {
-    let db = state.db.lock().await;
+    let roadmap = db.get_roadmap(roadmap_id).await?.ok_or("未找到路线图")?;
 
-    let roadmap = db.get_roadmap(&id).await?
-        .ok_or("未找到路线图")?;
-
-    let stages = db.get_stages_by_roadmap(&id).await?;
+    let stages = db.get_stages_by_roadmap(roadmap_id).await?;
 
     let mut stage_responses = Vec::new();
 
     for stage in stages {
-        let quiz = stage.quiz_json.as_ref().and_then(|q| {
-            serde_json::from_str::<Quiz>(q).ok()
-        });
-
         let tasks = db.get_tasks_by_stage(&stage.id).await?;
         let mut task_responses = Vec::new();
 
@@ -871,11 +1126,15 @@ pub async fn get_roadmap(
 
             task_responses.push(crate::models::TaskResponse {
                 id: task.id,
+                order: task.order,
                 title: task.title,
                 content: task.content,
+                points: parse_string_array(&task.points),
+                prerequisites: parse_string_array(&task.prerequisites),
                 task_type: task.task_type,
-                code_example: task.code_example,
-                exercise: task.exercise,
+                example: task.example,
+                is_completed: task.is_completed,
+                completed_at: task.completed_at,
                 resources: resource_responses,
             });
         }
@@ -885,13 +1144,16 @@ pub async fn get_roadmap(
             order: stage.order,
             name: stage.name,
             objective: stage.objective,
+            prerequisites: parse_string_array(&stage.prerequisites),
             estimated_hours: stage.estimated_hours,
             stage_type: stage.stage_type,
-            is_locked: stage.is_locked,
-            is_fallback: stage.metadata.as_deref().and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()).and_then(|v| v["is_fallback"].as_bool()).unwrap_or(false),
-            pass_threshold: stage.pass_threshold,
+            is_fallback: stage
+                .metadata
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                .and_then(|v| v["is_fallback"].as_bool())
+                .unwrap_or(false),
             tasks: task_responses,
-            quiz,
         });
     }
 
@@ -905,9 +1167,16 @@ pub async fn get_roadmap(
 }
 
 #[tauri::command]
-pub async fn get_all_roadmaps(
+pub async fn get_roadmap(
     state: State<'_, AppState>,
-) -> Result<Vec<Roadmap>, String> {
+    id: String,
+) -> Result<RoadmapResponse, String> {
+    let db = state.db.lock().await;
+    build_roadmap_response(&db, &id).await
+}
+
+#[tauri::command]
+pub async fn get_all_roadmaps(state: State<'_, AppState>) -> Result<Vec<Roadmap>, String> {
     let db = state.db.lock().await;
     db.get_all_roadmaps().await
 }
@@ -922,88 +1191,8 @@ pub async fn mark_task_completed(
     db.mark_task_completed(&task_id, completed).await
 }
 
-// Quiz submission request
-#[derive(Debug, Deserialize)]
-pub struct QuizSubmission {
-    pub stage_id: String,
-    pub answers: Vec<usize>,
-}
-
-// Quiz result response
-#[derive(Debug, Serialize)]
-pub struct QuizResult {
-    pub passed: bool,
-    pub score: f64,
-    pub correct_count: usize,
-    pub total_questions: usize,
-    pub feedback: Vec<QuestionFeedback>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct QuestionFeedback {
-    pub question_id: String,
-    pub correct: bool,
-    pub correct_index: usize,
-    pub explanation: String,
-}
-
 #[tauri::command]
-pub async fn submit_quiz(
-    state: State<'_, AppState>,
-    submission: QuizSubmission,
-) -> Result<QuizResult, String> {
-    info!("正在提交阶段测验：{}", submission.stage_id);
-
-    let db = state.db.lock().await;
-
-    let stage = db.get_stage_by_id(&submission.stage_id).await?
-        .ok_or("未找到阶段")?;
-
-    let quiz = stage.quiz_json.as_ref()
-        .and_then(|q| serde_json::from_str::<Quiz>(q).ok())
-        .ok_or("此阶段没有测验")?;
-
-    let mut correct_count = 0;
-    let mut feedback = Vec::new();
-
-    for (i, question) in quiz.questions.iter().enumerate() {
-        let user_answer = submission.answers.get(i).copied().unwrap_or(usize::MAX);
-        let is_correct = user_answer == question.correct_index;
-        if is_correct {
-            correct_count += 1;
-        }
-        feedback.push(QuestionFeedback {
-            question_id: question.id.clone(),
-            correct: is_correct,
-            correct_index: question.correct_index,
-            explanation: question.explanation.clone(),
-        });
-    }
-
-    let score = correct_count as f64 / quiz.questions.len() as f64;
-    let passed = score >= stage.pass_threshold;
-
-    info!("测验结果：通过={}，分数={:.2}", passed, score);
-
-    if passed {
-        db.unlock_next_stage(&submission.stage_id).await?;
-        info!("已解锁下一阶段：{}", submission.stage_id);
-    }
-
-    Ok(QuizResult {
-        passed,
-        score,
-        correct_count,
-        total_questions: quiz.questions.len(),
-        feedback,
-    })
-}
-
-#[tauri::command]
-pub async fn delete_roadmap(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_roadmap(state: State<'_, AppState>, id: String) -> Result<(), String> {
     info!("正在删除学习路线：{}", id);
     let db = state.db.lock().await;
     db.delete_roadmap(&id).await?;
@@ -1054,7 +1243,14 @@ pub async fn update_resource(
     request: UpdateResourceRequest,
 ) -> Result<(), String> {
     let db = state.db.lock().await;
-    db.update_resource(&request.id, &request.title, &request.url, &request.snippet, &request.resource_type).await?;
+    db.update_resource(
+        &request.id,
+        &request.title,
+        &request.url,
+        &request.snippet,
+        &request.resource_type,
+    )
+    .await?;
     info!("更新学习资源：{}", request.title);
     Ok(())
 }
@@ -1071,17 +1267,10 @@ pub async fn add_task_to_stage(
     info!("AI 闭环:向阶段 {} 添加任务「{}」", stage_id, title);
 
     // 校验 task_type 在白名单
-    let valid_types = ["reading", "exercise", "project", "video", "quiz"];
+    let valid_types = ["reading", "video", "project"];
     if !valid_types.contains(&task_type.as_str()) {
         return Err(format!("非法的 task_type: {}", task_type));
     }
-
-    // 验证阶段存在
-    let _stage = {
-        let db = state.db.lock().await;
-        db.get_stage_by_id(&stage_id).await?
-            .ok_or_else(|| "阶段不存在".to_string())?
-    };
 
     // content 头部加一行提示用户来源(可选)
     let minutes_note = minutes
@@ -1091,42 +1280,51 @@ pub async fn add_task_to_stage(
     let final_content = format!("{}{}", content, minutes_note);
 
     let task_id = Uuid::new_v4().to_string();
-    let task = Task {
-        id: task_id.clone(),
-        stage_id: stage_id.clone(),
-        title: title.trim().to_string(),
-        content: final_content,
-        task_type,
-        code_example: None,
-        exercise: None,
-        is_completed: false,
-        completed_at: None,
-    };
 
     // 写入
-    {
+    let response = {
         let db = state.db.lock().await;
+        db.get_stage_by_id(&stage_id)
+            .await?
+            .ok_or_else(|| "阶段不存在".to_string())?;
+        let existing = db.get_tasks_by_stage(&stage_id).await?;
+        let order = existing.iter().map(|t| t.order).max().unwrap_or(0) + 1;
+        let task = Task {
+            id: task_id.clone(),
+            stage_id: stage_id.clone(),
+            order,
+            title: title.trim().to_string(),
+            content: final_content,
+            points: "[]".to_string(),
+            prerequisites: "[]".to_string(),
+            task_type,
+            example: None,
+            is_completed: false,
+            completed_at: None,
+        };
         db.create_task(&task).await?;
-    }
+        crate::models::TaskResponse {
+            id: task.id,
+            order: task.order,
+            title: task.title,
+            content: task.content,
+            points: vec![],
+            prerequisites: vec![],
+            task_type: task.task_type,
+            example: task.example,
+            is_completed: task.is_completed,
+            completed_at: task.completed_at,
+            resources: vec![],
+        }
+    };
 
     info!("✔ 任务创建成功: {}", task_id);
 
-    Ok(crate::models::TaskResponse {
-        id: task.id,
-        title: task.title,
-        content: task.content,
-        task_type: task.task_type,
-        code_example: task.code_example,
-        exercise: task.exercise,
-        resources: vec![],
-    })
+    Ok(response)
 }
 
 #[tauri::command]
-pub async fn delete_resource(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_resource(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let db = state.db.lock().await;
     db.delete_resource(&id).await?;
     info!("删除学习资源：{}", id);
@@ -1145,7 +1343,9 @@ pub async fn retry_stage(
     let (_settings, api_key, (base_url_opt, model_opt, provider_type_opt)) = {
         let db = state.db.lock().await;
         let settings = db.get_settings().await?;
-        let api_key = db.get_api_key(&settings.ai_provider).await?
+        let api_key = db
+            .get_api_key(&settings.ai_provider)
+            .await?
             .ok_or_else(|| format!("{} 的 API Key not found", settings.ai_provider))?;
         let cfg = db.get_api_config(&settings.ai_provider).await?;
         let (b, m, p) = match cfg {
@@ -1160,32 +1360,91 @@ pub async fn retry_stage(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
-        .build().map_err(|e| format!("创建 HTTP 客户端失败：{}", e))?;
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败：{}", e))?;
 
     // Get stage + roadmap context
-    let (stage, roadmap) = {
+    let (stage, roadmap, all_stages) = {
         let db = state.db.lock().await;
         let s = db.get_stage_by_id(&stage_id).await?.ok_or("未找到阶段")?;
         let r = db.get_roadmap(&s.roadmap_id).await?.ok_or("未找到路线")?;
-        (s, r)
+        let stages = db.get_stages_by_roadmap(&s.roadmap_id).await?;
+        (s, r, stages)
     };
+
+    // 优先使用生成时保存的上下文;旧路线没有 metadata 时回退到标题与默认水平
+    let fallback_topic = roadmap
+        .title
+        .trim_end_matches(" 学习路线")
+        .trim_end_matches("学习路线")
+        .trim()
+        .to_string();
+    let fallback_topic = if fallback_topic.is_empty() {
+        roadmap.title.clone()
+    } else {
+        fallback_topic
+    };
+    let (topic, level) = match serde_json::from_str::<serde_json::Value>(
+        roadmap.metadata.as_deref().unwrap_or("{}"),
+    ) {
+        Ok(v) => {
+            let t = v["topic"]
+                .as_str()
+                .map(str::to_string)
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| fallback_topic.clone());
+            let l = v["level"]
+                .as_str()
+                .map(str::to_string)
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "中级".to_string());
+            (t, l)
+        }
+        Err(_) => (fallback_topic, "中级".to_string()),
+    };
+
+    let stage_titles: Vec<String> = all_stages.iter().map(|s| s.name.clone()).collect();
+    let stage_prerequisites: Vec<String> = all_stages
+        .iter()
+        .filter(|s| s.order < stage.order)
+        .map(|s| s.name.clone())
+        .collect();
 
     // Layer 2: generate task outlines for this stage
     info!("  [重试 L2] 生成阶段「{}」的任务骨架...", stage.name);
     let outline_prompt = build_stage_outline_only_prompt(
-        &roadmap.title, "中级", stage.order as usize,
-        &stage.name, &stage.objective,
+        &topic,
+        &level,
+        stage.order as usize,
+        &stage.name,
+        &stage.objective,
+        &stage_titles,
+        &stage_prerequisites,
     );
-    let raw = call_ai(
-        &client, &provider_type, &base_url, &model, &api_key,
+    let raw = call_ai_with_retry(
+        &client,
+        &provider_type,
+        &base_url,
+        &model,
+        &api_key,
         "你是学习路线图设计专家。严格按 JSON 格式返回。",
-        &outline_prompt, 3000,
-    ).await.map_err(|e| format!("L2 失败：{}", e))?;
+        &outline_prompt,
+        3000,
+    )
+    .await
+    .map_err(|e| format!("L2 失败：{}", e))?;
 
-    let stage_outline = crate::services::roadmap_parser::parse_stage_outline_only_response(&raw, stage.order as usize, &stage.name)
-        .map_err(|e| format!("解析失败：{}", e))?;
+    let stage_outline = crate::services::roadmap_parser::parse_stage_outline_only_response(
+        &raw,
+        stage.order as usize,
+        &stage.name,
+    )
+    .map_err(|e| format!("解析失败：{}", e))?;
 
-    info!("  [重试 L2] ✔ {} 个任务骨架", stage_outline.task_outlines.len());
+    info!(
+        "  [重试 L2] ✔ {} 个任务骨架",
+        stage_outline.task_outlines.len()
+    );
 
     // Layer 3: generate content for each task
     let mut task_contents: Vec<TaskContent> = Vec::new();
@@ -1203,18 +1462,39 @@ pub async fn retry_stage(
         let stage_desc = stage_outline.description.clone();
         let task_title = task.title.clone();
         let task_type = task.task_type.clone();
+        let task_prerequisites = task.prerequisites.clone();
+        let topic = topic.clone();
         let order = task.order;
 
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.map_err(|e| format!("信号量: {}", e))?;
-            let prompt = build_task_content_prompt(&stage_title, &stage_title, &stage_desc, &task_title, &task_type);
-            let raw = call_ai(
-                &client, &provider_type, &base_url, &model, &api_key,
+            let prompt = build_task_content_prompt(
+                &topic,
+                &stage_title,
+                &stage_desc,
+                &task_title,
+                &task_type,
+                &task_prerequisites,
+            );
+            let raw = call_ai_with_retry(
+                &client,
+                &provider_type,
+                &base_url,
+                &model,
+                &api_key,
                 "你是学习内容专家。严格按 JSON 格式返回。不要输出任何思考/推理,直接返回 JSON。",
-                &prompt, 5000,
-            ).await.map_err(|e| format!("L3 失败: {}", e))?;
+                &prompt,
+                5000,
+            )
+            .await
+            .map_err(|e| format!("L3 失败: {}", e))?;
 
-            crate::services::roadmap_parser::parse_task_content_response(&raw, order, &task_title, &task_type)
+            crate::services::roadmap_parser::parse_task_content_response(
+                &raw,
+                order,
+                &task_title,
+                &task_type,
+            )
         }));
     }
 
@@ -1231,8 +1511,18 @@ pub async fn retry_stage(
     // Delete old tasks and resources for this stage
     db.delete_tasks_by_stage(&stage_id).await?;
 
-    // Mark stage as not fallback
-    db.clear_stage_metadata(&stage_id).await?;
+    // Update stage with regenerated objective/prerequisites and clear fallback flag
+    let stage_type = if task_contents.iter().any(|t| t.task_type == "project") {
+        "project".to_string()
+    } else {
+        "learning".to_string()
+    };
+    let mut updated_stage = stage.clone();
+    updated_stage.objective = stage_outline.description.clone();
+    updated_stage.prerequisites = json_array_string(&stage_outline.prerequisites);
+    updated_stage.stage_type = stage_type;
+    updated_stage.metadata = None;
+    db.update_stage(&updated_stage).await?;
 
     // Insert new tasks + resources
     let mut new_tasks = Vec::new();
@@ -1241,11 +1531,13 @@ pub async fn retry_stage(
         let task = Task {
             id: task_id.clone(),
             stage_id: stage_id.clone(),
+            order: tc.order as i32,
             title: tc.title.clone(),
             content: tc.content.clone(),
+            points: json_array_string(&tc.points),
+            prerequisites: json_array_string(&tc.prerequisites),
             task_type: tc.task_type.clone(),
-            code_example: tc.code_example.clone(),
-            exercise: tc.exercise.clone(),
+            example: tc.example.clone(),
             is_completed: false,
             completed_at: None,
         };
@@ -1263,11 +1555,6 @@ pub async fn retry_stage(
             db.create_resource(&resource).await?;
         }
 
-        for f in &tc.flashcards {
-            let flashcard = Flashcard::new(stage.roadmap_id.clone(), f.question.clone(), f.answer.clone());
-            db.create_flashcard(&flashcard).await?;
-        }
-
         new_tasks.push(task_id);
     }
 
@@ -1280,28 +1567,37 @@ pub async fn retry_stage(
         let resources = db.get_resources_by_task(&task.id).await?;
         task_responses.push(crate::models::TaskResponse {
             id: task.id.clone(),
+            order: task.order,
             title: task.title.clone(),
             content: task.content.clone(),
+            points: parse_string_array(&task.points),
+            prerequisites: parse_string_array(&task.prerequisites),
             task_type: task.task_type.clone(),
-            code_example: task.code_example.clone(),
-            exercise: task.exercise.clone(),
-            resources: resources.into_iter().map(|r| crate::models::ResourceResponse {
-                id: r.id, title: r.title, url: r.url, snippet: r.snippet, resource_type: r.resource_type,
-            }).collect(),
+            example: task.example.clone(),
+            is_completed: task.is_completed,
+            completed_at: task.completed_at,
+            resources: resources
+                .into_iter()
+                .map(|r| crate::models::ResourceResponse {
+                    id: r.id,
+                    title: r.title,
+                    url: r.url,
+                    snippet: r.snippet,
+                    resource_type: r.resource_type,
+                })
+                .collect(),
         });
     }
 
     Ok(crate::models::StageResponse {
         id: stage_id,
-        order: stage.order,
-        name: stage.name,
-        objective: stage.objective,
-        estimated_hours: stage.estimated_hours,
-        stage_type: stage.stage_type,
-        is_locked: stage.is_locked,
+        order: updated_stage.order,
+        name: updated_stage.name,
+        objective: updated_stage.objective,
+        prerequisites: parse_string_array(&updated_stage.prerequisites),
+        estimated_hours: updated_stage.estimated_hours,
+        stage_type: updated_stage.stage_type,
         is_fallback: false,
-        pass_threshold: stage.pass_threshold,
         tasks: task_responses,
-        quiz: None,
     })
 }

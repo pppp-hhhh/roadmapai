@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export interface TodayTodo {
-  flashcards: number;
   tasks: number;
   updates: number;
 }
@@ -23,7 +22,7 @@ interface SidebarState {
   setApiStatus: (provider: string | null, hasKey: boolean) => void;
 }
 
-const initialTodo: TodayTodo = { flashcards: 0, tasks: 0, updates: 0 };
+const initialTodo: TodayTodo = { tasks: 0, updates: 0 };
 
 export const useSidebarStore = create<SidebarState>()(
   persist(
@@ -43,21 +42,10 @@ export const useSidebarStore = create<SidebarState>()(
       refreshTodayTodo: async () => {
         set({ isLoadingTodo: true });
         try {
-          // 动态 import 避免循环依赖
-          const { useFlashcardStore } = await import('./useFlashcardStore');
-          await Promise.all([
-            useFlashcardStore.getState().fetchDueCards(),
-            useFlashcardStore.getState().fetchNewCards(),
-          ]);
-          const fc = useFlashcardStore.getState();
-          set({
-            todayTodo: {
-              ...get().todayTodo,
-              flashcards: fc.dueCards.length + fc.newCards.length,
-            },
-            isLoadingTodo: false,
-          });
+          // 闪卡已移除;今日任务/路线更新待后端提供专门接口后接入
         } catch {
+          // ignore
+        } finally {
           set({ isLoadingTodo: false });
         }
       },

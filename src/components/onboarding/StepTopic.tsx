@@ -3,7 +3,7 @@ import { AlertCircle, Lightbulb, ScrollText } from 'lucide-react';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { validateTopic } from '../../stores/useCreateRoadmapWizardStore';
 
-const EXAMPLES = ['机器学习', 'Python 数据分析', 'Rust 系统编程', '摄影入门', 'Web 安全', '日语 N2'];
+const EXAMPLES = ['机器学习', '日语 N2', '摄影构图', '法语入门', '钢琴演奏', '临床医学基础'];
 const COUNTER = ['AI', '编程', '学习', '技术'];
 
 const StepTopic: FC = () => {
@@ -34,7 +34,7 @@ const StepTopic: FC = () => {
           type="text"
           value={topic}
           onChange={(e) => setField('topic', e.target.value)}
-          placeholder="例:机器学习、Python 编程"
+          placeholder="例:机器学习、日语 N2、摄影构图"
           className="w-full px-4 py-3 bg-paper dark:bg-night-100
             border-b-2 border-ink-300 dark:border-ink-600
             focus:border-seal-400 outline-none

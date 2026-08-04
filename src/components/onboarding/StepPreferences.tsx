@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import { Clock, Target, Compass } from 'lucide-react';
+import { Target, Compass } from 'lucide-react';
 import {
   useOnboardingStore,
   type OnboardingLevel,
@@ -12,12 +12,10 @@ const LEVELS: { value: OnboardingLevel; label: string; desc: string }[] = [
   { value: '高级', label: '高级', desc: '有实操,欲拓深' },
 ];
 
-const HOURS = [2, 4, 6, 10];
-
 const GOAL_PRESETS = ['求职面试', '期末复习', '项目实战', '个人兴趣'];
 
 const StepPreferences: FC = () => {
-  const { level, goal, weeklyHours, setField } = useOnboardingStore();
+  const { level, goal, setField } = useOnboardingStore();
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -87,30 +85,6 @@ const StepPreferences: FC = () => {
                 <div className="font-display italic text-[11px] text-ink-fade leading-snug">
                   {l.desc}
                 </div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <label className="smallcaps mb-3 flex items-center gap-2 text-[10px]">
-            <Clock size={11} />
-            <span>每 周 可 投 入 时 间</span>
-          </label>
-          <div className="grid grid-cols-4 gap-2">
-            {HOURS.map((h) => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => setField('weeklyHours', h)}
-                className={`px-3 py-3 font-display text-sm transition-all border
-                  ${weeklyHours === h
-                    ? 'bg-paper border-seal-400 text-seal-500 shadow-ink-1'
-                    : 'bg-ink-50/50 dark:bg-night-200/40 border-ink-200 dark:border-ink-700/40 text-ink-600 dark:text-ink-200 hover:border-seal-400/60'
-                  }`}
-              >
-                <span className="block text-lg font-semibold">{h}</span>
-                <span className="smallcaps text-[8px]">小 时</span>
               </button>
             ))}
           </div>

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, ListTodo, Sparkles, type LucideIcon } from 'lucide-react';
+import { ListTodo, Sparkles, type LucideIcon } from 'lucide-react';
 import { useSidebarStore } from '../../stores/useSidebarStore';
 
 interface TodoItemProps {
@@ -46,10 +46,10 @@ export default function TodayTodoList() {
     return () => clearInterval(t);
   }, [refreshTodayTodo]);
 
-  const total = todo.flashcards + todo.tasks + todo.updates;
+  const total = todo.tasks + todo.updates;
 
   if (isCollapsed) return null;
-  if (total === 0 && !todo.flashcards) return null;
+  if (total === 0) return null;
 
   return (
     <div className="px-5 pb-4">
@@ -58,21 +58,12 @@ export default function TodayTodoList() {
         <span className="text-gilt-500">❦</span>
       </div>
       <div className="border-t border-ink-200/60 dark:border-ink-700/40">
-        {todo.flashcards > 0 && (
-          <TodoItem
-            icon={Brain}
-            count={todo.flashcards}
-            label="待复习卡片"
-            glyph="I"
-            onClick={() => navigate('/flashcards')}
-          />
-        )}
         {todo.tasks > 0 && (
           <TodoItem
             icon={ListTodo}
             count={todo.tasks}
             label="今日未竟"
-            glyph="II"
+            glyph="I"
             onClick={() => navigate('/')}
           />
         )}
@@ -81,7 +72,7 @@ export default function TodayTodoList() {
             icon={Sparkles}
             count={todo.updates}
             label="路线更新"
-            glyph="III"
+            glyph="II"
             onClick={() => navigate('/')}
           />
         )}

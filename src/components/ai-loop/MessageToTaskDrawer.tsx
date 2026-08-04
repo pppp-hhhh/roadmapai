@@ -10,9 +10,8 @@ interface Props {
 
 const TASK_TYPES = [
   { value: 'reading', label: '阅读' },
-  { value: 'exercise', label: '练习' },
-  { value: 'project', label: '项目' },
   { value: 'video', label: '视频' },
+  { value: 'project', label: '项目' },
 ];
 
 const MessageToTaskDrawer: FC<Props> = ({ isOpen, onClose, content }) => {

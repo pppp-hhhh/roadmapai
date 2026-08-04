@@ -33,13 +33,13 @@
 
 ## 简介 / Introduction
 
-一个基于 Tauri 2 的桌面应用，利用 AI 为学习者生成个性化的学习路线图，并集成基于 SM-2 算法的间隔重复抽认卡系统。
+一个基于 Tauri 2 的桌面应用，利用 AI 为学习者生成个性化的学习路线图，并集成基于 SM-2 算法的间隔重复抽认卡系统。无论你想学编程、外语、医学、摄影还是职业技能，它都会按该领域公认的教材、术语和资源生成对应的学习路线。
 
-A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps with SM-2 spaced repetition flashcards.
+A Tauri 2 desktop app that uses AI to generate personalized learning roadmaps with SM-2 spaced repetition flashcards, covering any discipline from programming and languages to medicine, arts, and professional skills.
 
 ## ✨ 功能 / Features
 
-- **AI 生成学习路线** — 描述你想学的内容，AI 自动生成阶段、任务和资源
+- **AI 生成学习路线** — 描述你想学的内容（编程、语言、医学、艺术、职业技能等），AI 自动生成阶段、任务和资源
 - **三层并行生成** — 协调器 → 阶段 → 任务内容，并行加速
 - **进度追踪** — 可视化任务完成进度，支持阶段过关测验
 - **资源自动搜索** — 集成 Tavily API，自动搜索学习资源（可选）

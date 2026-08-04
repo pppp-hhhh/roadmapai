@@ -4,9 +4,8 @@ import type { OnboardingStep } from '../../stores/useOnboardingStore';
 import { roman } from '../manuscript/roman';
 
 const STEPS: { id: OnboardingStep; label: string; subtitle: string }[] = [
-  { id: 1, label: '配 钥',  subtitle: 'API Key' },
-  { id: 2, label: '拟 题',  subtitle: 'Topic'   },
-  { id: 3, label: '定 律',  subtitle: 'Pace'    },
+  { id: 1, label: '配 钥',  subtitle: 'API Key'    },
+  { id: 2, label: '访 谈',  subtitle: 'Interview'  },
 ];
 
 const OnboardingProgress: FC<{ currentStep: OnboardingStep }> = ({ currentStep }) => {
@@ -17,7 +16,7 @@ const OnboardingProgress: FC<{ currentStep: OnboardingStep }> = ({ currentStep }
         <span className="smallcaps">序 · Prologue</span>
         <div className="flex-1 h-px bg-gilt-500/40" />
         <span className="font-mono text-[10px] text-ink-fade tabular-nums">
-          {String(currentStep).padStart(2, '0')} / 03
+          {String(currentStep).padStart(2, '0')} / 02
         </span>
       </div>
 

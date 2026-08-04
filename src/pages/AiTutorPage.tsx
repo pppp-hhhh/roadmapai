@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Trash2, Bot, User, BookOpen, Lightbulb, Code, Layers, ChevronDown, Feather } from 'lucide-react';
+import { Send, Trash2, Bot, User, BookOpen, Lightbulb, FileText, Layers, ChevronDown, Feather, MapPin } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
@@ -8,7 +8,6 @@ import { useChatStore } from '../stores/useChatStore';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
 import {
   MessageActions,
-  MessageToFlashcardDrawer,
   MessageToTaskDrawer,
   PENDING_KEY,
 } from '../components/ai-loop';
@@ -18,7 +17,7 @@ import { roman } from '../components/manuscript/roman';
 const suggestedPrompts = [
   { icon: BookOpen,  text: '用 通 俗 易 懂 的 话 解 释 一 个 概 念' },
   { icon: Lightbulb, text: '给 我 一 些 学 习 这 个 主 题 的 建 议' },
-  { icon: Code,      text: '给 我 看 一 段 代 码 示 例' },
+  { icon: FileText,  text: '给 我 一 个 例 子 / 案 例' },
 ];
 
 export default function AiTutorPage() {
@@ -28,9 +27,13 @@ export default function AiTutorPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedRoadmapId, setSelectedRoadmapId] = useState<string>('');
   const [showRoadmapDropdown, setShowRoadmapDropdown] = useState(false);
+  const [selectedStageId, setSelectedStageId] = useState<string>('');
+  const [selectedTaskId, setSelectedTaskId] = useState<string>('');
 
-  const [flashcardDrawerMsg, setFlashcardDrawerMsg] = useState<{ id: string; content: string } | null>(null);
   const [taskDrawerMsg, setTaskDrawerMsg] = useState<{ id: string; content: string } | null>(null);
+
+  const selectedStage = currentRoadmap?.stages.find((s) => s.id === selectedStageId) ?? null;
+  const selectedTask = selectedStage?.tasks.find((t) => t.id === selectedTaskId) ?? null;
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { fetchRoadmaps(); }, [fetchRoadmaps]);
@@ -55,15 +58,17 @@ export default function AiTutorPage() {
     const input = inputRef.current;
     if (!input || !input.value.trim() || isStreaming) return;
     let message = input.value.trim();
+    const options: { stageId?: string | null; taskId?: string | null } = {};
     if (currentRoadmap && selectedRoadmapId) {
-      const unlockedStage = currentRoadmap.stages.find(s => !s.isLocked);
-      const context = unlockedStage
-        ? `（背景：我正在学习「${currentRoadmap.title}」，当前阶段「${unlockedStage.name}」，请围绕此上下文回答）\n\n${message}`
-        : `（背景：我正在学习「${currentRoadmap.title}」，请围绕此上下文回答）\n\n${message}`;
-      message = context;
+      const parts = [`正在学习「${currentRoadmap.title}」`];
+      if (selectedStage) parts.push(`当前阶段「${selectedStage.name}」`);
+      if (selectedTask) parts.push(`当前任务「${selectedTask.title}」`);
+      options.stageId = selectedStage?.id ?? null;
+      options.taskId = selectedTask?.id ?? null;
+      message = `（背景：${parts.join('，')}，请围绕此上下文回答）\n\n${message}`;
     }
     input.value = '';
-    await sendMessage(message);
+    await sendMessage(message, options);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -122,7 +127,7 @@ export default function AiTutorPage() {
                     <div className="fixed inset-0 z-10" onClick={() => setShowRoadmapDropdown(false)} />
                     <div className="absolute right-0 top-full mt-1 z-20 w-60 manuscript-card p-1 shadow-ink-2 animate-ink-spread">
                       <button
-                        onClick={() => { setSelectedRoadmapId(''); setShowRoadmapDropdown(false); }}
+                        onClick={() => { setSelectedRoadmapId(''); setSelectedStageId(''); setSelectedTaskId(''); setShowRoadmapDropdown(false); }}
                         className="w-full text-left px-3 py-2 font-display text-sm text-ink-fade
                           hover:bg-ink-100/50 dark:hover:bg-night-300/50 transition-colors"
                       >
@@ -131,7 +136,7 @@ export default function AiTutorPage() {
                       {roadmaps.map((r, i) => (
                         <button
                           key={r.id}
-                          onClick={() => { setSelectedRoadmapId(r.id); setShowRoadmapDropdown(false); }}
+                          onClick={() => { setSelectedRoadmapId(r.id); setSelectedStageId(''); setSelectedTaskId(''); setShowRoadmapDropdown(false); }}
                           className={`w-full text-left px-3 py-2 font-display text-sm transition-colors flex items-center gap-2
                             ${r.id === selectedRoadmapId
                               ? 'bg-seal-50/60 dark:bg-seal-700/15 text-seal-500'
@@ -157,6 +162,43 @@ export default function AiTutorPage() {
             )}
           </div>
         </div>
+
+        {currentRoadmap && selectedRoadmapId && (
+          <div className="max-w-3xl mx-auto px-12 pb-4 flex flex-wrap items-center gap-2">
+            <span className="smallcaps text-[9px] flex items-center gap-1">
+              <MapPin size={11} className="text-seal-500" />
+              位 置
+            </span>
+            <select
+              value={selectedStageId}
+              onChange={(e) => { setSelectedStageId(e.target.value); setSelectedTaskId(''); }}
+              className="px-2.5 py-1.5 bg-ink-50/60 dark:bg-night-200/40
+                border border-ink-300 dark:border-ink-600
+                hover:border-seal-400 focus:border-seal-400 outline-none
+                font-display text-xs text-ink-700 dark:text-ink-100 max-w-[180px]"
+            >
+              <option value="">整 卷 问 学</option>
+              {currentRoadmap.stages.map((s) => (
+                <option key={s.id} value={s.id}>{s.order}. {s.name}</option>
+              ))}
+            </select>
+            {selectedStage && selectedStage.tasks.length > 0 && (
+              <select
+                value={selectedTaskId}
+                onChange={(e) => setSelectedTaskId(e.target.value)}
+                className="px-2.5 py-1.5 bg-ink-50/60 dark:bg-night-200/40
+                  border border-ink-300 dark:border-ink-600
+                  hover:border-seal-400 focus:border-seal-400 outline-none
+                  font-display text-xs text-ink-700 dark:text-ink-100 max-w-[200px]"
+              >
+                <option value="">全 章 问 学</option>
+                {selectedStage.tasks.map((t) => (
+                  <option key={t.id} value={t.id}>{t.title}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
       </header>
 
       {/* 消息区 */}
@@ -223,7 +265,6 @@ export default function AiTutorPage() {
                         <MessageActions
                           content={message.content}
                           messageId={message.id}
-                          onOpenFlashcardDrawer={() => setFlashcardDrawerMsg({ id: message.id, content: message.content })}
                           onOpenTaskDrawer={() => setTaskDrawerMsg({ id: message.id, content: message.content })}
                         />
                       </>
@@ -257,7 +298,10 @@ export default function AiTutorPage() {
           {error && (
             <div className="flex justify-center">
               <ErrorState variant="card" level="api" error={error}
-                onRetry={() => sendMessage(messages[messages.length - 1]?.content ?? '')} />
+                onRetry={() => {
+                  const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+                  if (lastUser) void sendMessage(lastUser.content);
+                }} />
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -290,9 +334,6 @@ export default function AiTutorPage() {
         </form>
       </footer>
 
-      {flashcardDrawerMsg && (
-        <MessageToFlashcardDrawer isOpen={!!flashcardDrawerMsg} onClose={() => setFlashcardDrawerMsg(null)} content={flashcardDrawerMsg.content} />
-      )}
       {taskDrawerMsg && (
         <MessageToTaskDrawer isOpen={!!taskDrawerMsg} onClose={() => setTaskDrawerMsg(null)} content={taskDrawerMsg.content} />
       )}

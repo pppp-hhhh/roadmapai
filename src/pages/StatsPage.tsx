@@ -1,4 +1,4 @@
-import { BarChart3, Clock, Brain, ListTodo, TrendingUp, type LucideIcon } from 'lucide-react';
+import { BarChart3, Clock, ListTodo, TrendingUp, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -6,8 +6,6 @@ interface Stats {
   total_roadmaps: number;
   total_tasks: number;
   completed_tasks: number;
-  total_flashcards: number;
-  reviewed_flashcards: number;
   total_chat_messages: number;
   total_favorites: number;
 }
@@ -16,8 +14,6 @@ const DEFAULT_STATS: Stats = {
   total_roadmaps: 0,
   total_tasks: 0,
   completed_tasks: 0,
-  total_flashcards: 0,
-  reviewed_flashcards: 0,
   total_chat_messages: 0,
   total_favorites: 0,
 };
@@ -34,11 +30,9 @@ export default function StatsPage() {
       } catch {
         try {
           const roadmaps = await invoke<any[]>('get_all_roadmaps');
-          const flashcards = await invoke<any[]>('get_due_flashcards').catch(() => []);
           setStats({
             ...DEFAULT_STATS,
             total_roadmaps: roadmaps.length,
-            total_flashcards: flashcards.length,
           });
         } catch (err) {
           setError(String(err));
@@ -84,9 +78,6 @@ export default function StatsPage() {
   const taskCompletion = stats.total_tasks > 0
     ? Math.round((stats.completed_tasks / stats.total_tasks) * 100)
     : 0;
-  const cardCompletion = stats.total_flashcards > 0
-    ? Math.round((stats.reviewed_flashcards / stats.total_flashcards) * 100)
-    : 0;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -105,9 +96,8 @@ export default function StatsPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <StatCard icon={ListTodo}  roman="I"   label="学 习 路 线"   value={stats.total_roadmaps} />
           <StatCard icon={Clock}     roman="II"  label="任 务 完 成 率" value={`${taskCompletion}%`} sub={`${stats.completed_tasks} / ${stats.total_tasks}`} />
-          <StatCard icon={Brain}     roman="III" label="闪 卡 总 数"   value={stats.total_flashcards} sub={cardCompletion > 0 ? `已 复 习 ${cardCompletion}%` : undefined} />
-          <StatCard icon={TrendingUp} roman="IV"  label="AI 对 话"      value={stats.total_chat_messages} />
-          <StatCard icon={BarChart3}  roman="V"   label="收 藏 数"      value={stats.total_favorites} />
+          <StatCard icon={TrendingUp} roman="III" label="AI 对 话"      value={stats.total_chat_messages} />
+          <StatCard icon={BarChart3}  roman="IV"  label="收 藏 数"      value={stats.total_favorites} />
         </div>
       </div>
     </div>

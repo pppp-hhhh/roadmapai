@@ -1,7 +1,8 @@
-pub mod flashcard;
+pub mod ai_loop;
 pub mod chat;
+pub mod favorites;
+pub mod intake;
+pub mod optimize;
 pub mod roadmap;
 pub mod settings;
-pub mod favorites;
 pub mod stats;
-pub mod ai_loop;

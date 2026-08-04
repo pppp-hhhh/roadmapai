@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { Roadmap, RoadmapRequest, Stage, QuizResult, ProgressEvent, Resource } from '../types';
+import type { Roadmap, RoadmapRequest, Stage, ProgressEvent, Resource, RoadmapDetail, OptimizeRoadmapRequest } from '../types';
 
 interface RoadmapState {
   roadmaps: Roadmap[];
-  currentRoadmap: Roadmap & { stages: Stage[] } | null;
+  currentRoadmap: RoadmapDetail | null;
   isLoading: boolean;
   isGenerating: boolean;
   error: string | null;
@@ -17,7 +17,7 @@ interface RoadmapState {
   cancelGeneration: () => Promise<void>;
   deleteRoadmap: (id: string) => Promise<void>;
   markTaskCompleted: (taskId: string, completed: boolean) => Promise<void>;
-  submitQuiz: (stageId: string, answers: number[]) => Promise<QuizResult>;
+  optimizeRoadmap: (params: OptimizeRoadmapRequest) => Promise<RoadmapDetail>;
   getTaskCount: (roadmapId: string) => Promise<{ total: number; completed: number }>;
   addResource: (taskId: string, title: string, url: string, snippet: string, resourceType: string) => Promise<Resource>;
   updateResource: (id: string, title: string, url: string, snippet: string, resourceType: string) => Promise<void>;
@@ -47,7 +47,7 @@ export const useRoadmapStore = create<RoadmapState>((set, get) => ({
   fetchRoadmap: async (id: string) => {
     set({ isLoading: true, error: null });
     try {
-      const roadmap = await invoke<Roadmap & { stages: Stage[] }>('get_roadmap', { id });
+      const roadmap = await invoke<RoadmapDetail>('get_roadmap', { id });
       set({ currentRoadmap: roadmap, isLoading: false });
     } catch (error) {
       set({ error: String(error), isLoading: false });
@@ -107,10 +107,11 @@ export const useRoadmapStore = create<RoadmapState>((set, get) => ({
     }
   },
 
-  submitQuiz: async (stageId: string, answers: number[]) => {
+  optimizeRoadmap: async (params: OptimizeRoadmapRequest) => {
+    set({ error: null });
     try {
-      const result = await invoke<QuizResult>('submit_quiz', { stageId, answers });
-      await get().fetchRoadmap(get().currentRoadmap?.id || '');
+      const result = await invoke<RoadmapDetail>('optimize_roadmap', { request: params });
+      set({ currentRoadmap: result });
       return result;
     } catch (error) {
       set({ error: String(error) });

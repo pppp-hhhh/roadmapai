@@ -1,7 +1,7 @@
+use crate::services::parallel::ResourceDetail;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use crate::services::parallel::ResourceDetail;
 
 const TAVILY_URL: &str = "https://api.tavily.com/search";
 
@@ -28,11 +28,21 @@ struct TavilyResult {
 
 fn map_resource_type(url: &str) -> String {
     let url_lower = url.to_lowercase();
-    if url_lower.contains("youtube.com") || url_lower.contains("bilibili.com") || url_lower.contains("youtu.be") {
+    if url_lower.contains("youtube.com")
+        || url_lower.contains("bilibili.com")
+        || url_lower.contains("youtu.be")
+    {
         "video".to_string()
-    } else if url_lower.contains("docs.") || url_lower.contains("/docs/") || url_lower.contains("documentation") {
+    } else if url_lower.contains("docs.")
+        || url_lower.contains("/docs/")
+        || url_lower.contains("documentation")
+    {
         "documentation".to_string()
-    } else if url_lower.contains("course") || url_lower.contains("udemy") || url_lower.contains("coursera") || url_lower.contains("imooc") {
+    } else if url_lower.contains("course")
+        || url_lower.contains("udemy")
+        || url_lower.contains("coursera")
+        || url_lower.contains("imooc")
+    {
         "course".to_string()
     } else {
         "article".to_string()
@@ -102,8 +112,7 @@ pub async fn search_resources(
 pub fn build_search_query(topic: &str, task_title: &str, task_type: &str) -> String {
     let type_hint = match task_type {
         "video" => " 教程 视频",
-        "exercise" => " 练习题 示例",
-        "project" => " 项目实战 教程",
+        "project" => " 实践案例 项目",
         _ => " 教程",
     };
     format!("{} {} {}", topic, task_title, type_hint)

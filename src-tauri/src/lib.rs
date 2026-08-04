@@ -7,10 +7,10 @@ pub use db::Database;
 pub use models::*;
 pub use services::*;
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
-use tokio::sync::Mutex;
+use std::sync::Arc;
 use tauri::Manager;
+use tokio::sync::Mutex;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 pub struct AppState {
@@ -20,8 +20,7 @@ pub struct AppState {
 }
 
 fn setup_logging(app: &tauri::App) -> tracing_appender::non_blocking::WorkerGuard {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let log_dir = app
         .path()
@@ -50,9 +49,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
 
             tauri::async_runtime::block_on(async {
-                let db = Database::new(&app_handle)
-                    .await
-                    .expect("数据库初始化失败");
+                let db = Database::new(&app_handle).await.expect("数据库初始化失败");
 
                 let state = AppState {
                     db: Arc::new(Mutex::new(db)),
@@ -73,18 +70,14 @@ pub fn run() {
             commands::roadmap::get_all_roadmaps,
             commands::roadmap::delete_roadmap,
             commands::roadmap::mark_task_completed,
-            commands::roadmap::submit_quiz,
             commands::roadmap::add_resource,
             commands::roadmap::update_resource,
             commands::roadmap::delete_resource,
             commands::roadmap::retry_stage,
             commands::roadmap::add_task_to_stage,
-            commands::flashcard::create_flashcard,
-            commands::flashcard::get_due_flashcards,
-            commands::flashcard::get_new_flashcards,
-            commands::flashcard::get_flashcard_detail,
-            commands::flashcard::learn_flashcard,
-            commands::flashcard::review_flashcard,
+            commands::intake::intake_ask,
+            commands::intake::intake_summarize,
+            commands::optimize::optimize_roadmap,
             commands::settings::save_api_key,
             commands::settings::get_api_key,
             commands::settings::save_api_config,

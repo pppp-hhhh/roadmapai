@@ -1,180 +1,138 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, CheckCircle2, Circle, ExternalLink,
-  HelpCircle, X, Play,
-  ChevronDown, ChevronRight, AlertTriangle, Plus, MessageCircle, Star,
+  ArrowLeft,
+  BookOpen,
+  CheckCircle2,
+  Library,
+  ChevronDown,
+  Circle,
+  ExternalLink,
+  Loader2,
+  MapPin,
+  MessageCircleQuestion,
+  Play,
+  Star,
+  Wand2,
+  X,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import rehypeHighlight from 'rehype-highlight';
-import remarkGfm from 'remark-gfm';
-import { lowlight, sanitizeMarkdown } from '../utils/markdown';
 import { useRoadmapStore } from '../stores/useRoadmapStore';
-import QuizModal from '../components/QuizModal';
+import { useAiCompanionStore } from '../stores/useAiCompanionStore';
+import { ResourceDrawer } from '../components/ai-loop';
 import { openExternalLink } from '../utils/links';
-import type { Stage, Resource, Task } from '../types';
-import { TaskToTutorDrawer, ResourceDrawer } from '../components/ai-loop';
-import { useFavoriteStore } from '../stores/useFavoriteStore';
 import { roman } from '../components/manuscript/roman';
-
-const taskTypeGlyph: Record<string, string> = {
-  reading: '§', video: '▶', exercise: '✎', project: '✦', quiz: '?',
-};
+import type { OptimizeScope, Resource, Stage, Task } from '../types';
 
 export default function RoadmapDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentRoadmap, isLoading, fetchRoadmap, markTaskCompleted, submitQuiz, deleteResource, retryStage } = useRoadmapStore();
-  const { addFavorite, removeFavorite, isFavorited, favorites } = useFavoriteStore();
-  const [selectedStage, setSelectedStage] = useState<Stage | null>(null);
-  const [showStageModal, setShowStageModal] = useState(false);
-  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
-  const [quizStage, setQuizStage] = useState<Stage | null>(null);
-  const [showQuizModal, setShowQuizModal] = useState(false);
+  const {
+    currentRoadmap,
+    isLoading,
+    fetchRoadmap,
+    markTaskCompleted,
+    optimizeRoadmap,
+    retryStage,
+  } = useRoadmapStore();
+
   const [resourceDrawer, setResourceDrawer] = useState<{
     mode: 'add' | 'edit';
     taskId: string;
     resource: Resource | null;
   } | null>(null);
-  const [tutorTask, setTutorTask] = useState<Task | null>(null);
-
-  useEffect(() => { if (id) fetchRoadmap(id); }, [id, fetchRoadmap]);
-
-  const handleStageClick = (stage: Stage) => {
-    if (stage.isLocked) return;
-    setSelectedStage(stage); setShowStageModal(true); setExpandedTasks(new Set());
-  };
-
-  const toggleExpandTask = (taskId: string) => {
-    setExpandedTasks(prev => {
+  const [resourcesOpen, setResourcesOpen] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const toggleTaskExpanded = (taskId: string) => {
+    setExpandedTasks((prev) => {
       const next = new Set(prev);
-      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
       return next;
     });
   };
+  type FeedbackTarget = {
+    scope: OptimizeScope;
+    stageId: string | null;
+    taskId: string | null;
+    title: string;
+    subject: string;
+  };
+  const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimizeError, setOptimizeError] = useState<string | null>(null);
 
-  const handleTaskToggle = async (taskId: string, completed: boolean) => {
-    await markTaskCompleted(taskId, completed);
-    if (selectedStage && showStageModal) {
-      setSelectedStage(prev => {
-        if (!prev) return null;
-        return { ...prev, tasks: prev.tasks.map(t => t.id === taskId ? { ...t, is_completed: completed } : t) };
+  const openFeedback = (target: FeedbackTarget) => {
+    setFeedbackTarget(target);
+    setFeedbackText('');
+    setOptimizeError(null);
+  };
+  const closeFeedback = () => {
+    if (optimizing) return;
+    setFeedbackTarget(null);
+    setFeedbackText('');
+    setOptimizeError(null);
+  };
+  const submitFeedback = async () => {
+    if (!currentRoadmap || !feedbackTarget || !feedbackText.trim() || optimizing) return;
+    setOptimizing(true);
+    setOptimizeError(null);
+    try {
+      await optimizeRoadmap({
+        roadmap_id: currentRoadmap.id,
+        scope: feedbackTarget.scope,
+        stage_id: feedbackTarget.stageId,
+        task_id: feedbackTarget.taskId,
+        feedback: feedbackText.trim(),
       });
+      setFeedbackTarget(null);
+      setFeedbackText('');
+    } catch (error) {
+      setOptimizeError(String(error));
+    } finally {
+      setOptimizing(false);
     }
   };
 
-  const handleStartQuiz = (stage: Stage) => { setShowStageModal(false); setQuizStage(stage); setShowQuizModal(true); };
-  const handleQuizSubmit = async (answers: number[]) => {
-    if (!quizStage) return { passed: false, score: 0, correctCount: 0, totalQuestions: 0, feedback: [] };
-    const result = await submitQuiz(quizStage.id, answers);
-    if (result.passed && currentRoadmap) fetchRoadmap(currentRoadmap.id);
-    return result;
-  };
-
-  const handleDeleteResource = async (resourceId: string) => {
-    if (!confirm('确定删除此资源?')) return;
-    await deleteResource(resourceId);
-    if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
-  };
-
-  const getCompletedTaskCount = (stage: Stage) => stage.tasks.filter(t => t.is_completed).length;
-  const getStageProgress = (stage: Stage) => stage.tasks.length === 0 ? 0 : Math.round((getCompletedTaskCount(stage) / stage.tasks.length) * 100);
-  const canTakeQuiz = (stage: Stage) => {
-    if (stage.isLocked || stage.stageType === 'quiz') return false;
-    return stage.tasks.length > 0 && getCompletedTaskCount(stage) === stage.tasks.length;
-  };
+  useEffect(() => {
+    if (id) fetchRoadmap(id);
+  }, [id, fetchRoadmap]);
 
   const overview = useMemo(() => {
-    if (!currentRoadmap) return { total: 0, done: 0, pct: 0, chapters: 0 };
-    let total = 0, done = 0;
-    currentRoadmap.stages.forEach(s => {
-      if (s.stageType !== 'quiz') s.tasks.forEach(t => { total++; if (t.is_completed) done++; });
+    if (!currentRoadmap) {
+      return { stages: 0, tasks: 0, done: 0, pct: 0 };
+    }
+    let total = 0;
+    let done = 0;
+    currentRoadmap.stages.forEach((stage) => {
+      stage.tasks.forEach((task) => {
+        total += 1;
+        if (task.is_completed) done += 1;
+      });
     });
     return {
-      total, done,
+      stages: currentRoadmap.stages.length,
+      tasks: total,
+      done,
       pct: total > 0 ? Math.round((done / total) * 100) : 0,
-      chapters: currentRoadmap.stages.length,
     };
   }, [currentRoadmap]);
 
-  const renderResourceCard = (r: Resource) => {
-    const favorited = isFavorited('resource', r.id);
-    return (
-      <div key={r.id} className="shrink-0 w-60 manuscript-card p-3 group relative bg-ink-50/70 dark:bg-night-200/60">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="smallcaps text-[8px]">
-            {r.resource_type === 'video' ? '影 · 視頻' :
-             r.resource_type === 'course' ? '課 · 課程' :
-             r.resource_type === 'article' ? '文 · 文章' : '典 · 文檔'}
-          </div>
-          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (favorited) {
-                  const f = favorites.find((x) => x.type === 'resource' && x.ref_id === r.id);
-                  if (f) removeFavorite(f.id);
-                } else {
-                  addFavorite({
-                    type: 'resource',
-                    ref_id: r.id,
-                    roadmap_id: currentRoadmap?.id ?? null,
-                    title: r.title,
-                    preview: r.snippet ?? null,
-                  });
-                }
-              }}
-              className="p-0.5 hover:bg-gilt-500/20 text-ink-fade hover:text-gilt-500"
-              title={favorited ? '取消收藏' : '收藏'}
-            >
-              <Star size={11} className={favorited ? 'fill-gilt-500 text-gilt-500' : ''} />
-            </button>
-            <button
-              onClick={(evt) => {
-                evt.stopPropagation();
-                setResourceDrawer({ mode: 'edit', taskId: '', resource: r });
-              }}
-              className="p-0.5 hover:bg-ink-200 dark:hover:bg-ink-700 text-ink-fade"
-              title="编辑"
-            >
-              <Plus size={11} className="rotate-45" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleDeleteResource(r.id); }}
-              className="p-0.5 hover:bg-seal-50 text-ink-fade hover:text-seal-500"
-              title="删除"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-        <button onClick={() => openExternalLink(r.url)} className="w-full text-left">
-          <div className="font-display text-[13px] font-semibold text-ink-700 dark:text-ink-100 mb-1 line-clamp-2 hover:text-seal-500 transition-colors leading-snug">
-            {r.title}
-          </div>
-          {r.snippet && <div className="font-display italic text-[11px] text-ink-fade line-clamp-1">{r.snippet}</div>}
-          <div className="flex items-center gap-1 mt-2 font-mono text-[9px] smallcaps text-seal-500">
-            <ExternalLink size={10} />
-            <span>展 卷</span>
-          </div>
-        </button>
-      </div>
-    );
+  const firstIncomplete = useMemo(() => {
+    if (!currentRoadmap) return null;
+    for (const stage of currentRoadmap.stages) {
+      for (const task of stage.tasks) {
+        if (!task.is_completed) return { stageId: stage.id, taskId: task.id };
+      }
+    }
+    return null;
+  }, [currentRoadmap]);
+
+  const handleTaskToggle = async (task: Task, completed: boolean) => {
+    await markTaskCompleted(task.id, completed);
   };
 
-  const renderAddResourceButton = (taskId: string) => (
-    <div className="shrink-0 w-60">
-      <button
-        onClick={() => setResourceDrawer({ mode: 'add', taskId, resource: null })}
-        className="w-full h-full min-h-[88px] flex flex-col items-center justify-center gap-1
-          border border-dashed border-ink-300 dark:border-ink-700/60
-          hover:border-seal-400 transition-colors text-ink-fade hover:text-seal-500"
-      >
-        <Plus size={18} />
-        <span className="smallcaps text-[8px]">添 资 料</span>
-      </button>
-    </div>
-  );
+
+
 
   if (isLoading || !currentRoadmap) {
     return (
@@ -189,441 +147,331 @@ export default function RoadmapDetailPage() {
     );
   }
 
-  const radius = 46, circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (overview.pct / 100) * circumference;
+
+  const renderTaskCard = (task: Task) => {
+    const isCurrent = firstIncomplete?.taskId === task.id;
+    const taskResourceCount = task.resources?.length || 0;
+    const isExpanded = expandedTasks.has(task.id);
+    const hasPoints = (task.points?.length || 0) > 0;
+    const expandable = hasPoints || taskResourceCount > 0;
+    return (
+      <div
+        className={`group relative border bg-paper/70 dark:bg-night-200/30 transition-colors
+          ${isCurrent
+            ? 'border-seal-400 bg-seal-50/50 dark:bg-seal-700/15 shadow-ink-1'
+            : task.is_completed
+              ? 'border-gilt-500/30 bg-gilt-500/5'
+              : 'border-ink-200 dark:border-ink-700/40'}
+        `}
+      >
+        <div className="px-2.5 py-2 flex items-start gap-1.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); handleTaskToggle(task, !task.is_completed); }}
+            className="shrink-0 mt-0.5 transition-transform hover:scale-110"
+            title={task.is_completed ? '标记为未完成' : '标记为已完成'}
+          >
+            {task.is_completed ? (
+              <CheckCircle2 size={14} className="text-gilt-500" />
+            ) : (
+              <Circle size={14} className="text-ink-fade hover:text-seal-400" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => expandable && toggleTaskExpanded(task.id)}
+            className={`flex-1 min-w-0 text-left ${expandable ? 'cursor-pointer' : 'cursor-default'}`}
+            title={expandable ? (isExpanded ? '收起' : '点击查看核心知识点与学习资源') : task.title}
+          >
+            <div
+              className={`font-display text-[12px] leading-snug
+                ${task.is_completed
+                  ? 'text-ink-fade line-through decoration-gilt-500/50'
+                  : isCurrent
+                    ? 'text-seal-600 dark:text-seal-200 font-medium'
+                    : 'text-ink-700 dark:text-ink-100'}
+                ${expandable && !isExpanded ? 'hover:text-seal-500 transition-colors' : ''}
+              `}
+            >
+              {task.title}
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+              <span className={`font-mono text-[8px] tracking-wider px-1 py-px
+                ${task.task_type === 'project'
+                  ? 'bg-seal-500/15 text-seal-500'
+                  : task.task_type === 'video'
+                    ? 'bg-gilt-500/15 text-gilt-600 dark:text-gilt-400'
+                    : 'bg-ink-200/50 dark:bg-night-100/40 text-ink-soft dark:text-ink-fade'}`}>
+                {task.task_type.toUpperCase()}
+              </span>
+              {isCurrent && (
+                <span className="inline-flex items-center gap-0.5 px-1 py-px bg-seal-500 text-ink-50 text-[8px] font-display">
+                  <MapPin size={8} />
+                  当 前
+                </span>
+              )}
+              {taskResourceCount > 0 && (
+                <span className="inline-flex items-center gap-0.5 font-mono text-[8px] text-gilt-600 dark:text-gilt-400">
+                  <BookOpen size={9} />
+                  {taskResourceCount}
+                </span>
+              )}
+              {expandable && (
+                <span className={`ml-auto font-mono text-[8px] text-ink-fade transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                  <ChevronDown size={10} />
+                </span>
+              )}
+            </div>
+          </button>
+        </div>
+
+        {isExpanded && expandable && (
+          <div className="px-2.5 py-2 border-t border-ink-200/60 dark:border-ink-700/40 space-y-2 bg-white dark:bg-night-100/30">
+            {hasPoints && (
+              <ul className="space-y-1">
+                {task.points!.slice(0, 4).map((point, pi) => (
+                  <li key={pi} className="flex items-start gap-1.5 font-display text-[10px] text-ink-600 dark:text-ink-200 leading-snug">
+                    <span className="mt-[5px] w-1 h-1 bg-seal-400 flex-shrink-0" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {taskResourceCount > 0 && (
+              <div className="space-y-1">
+                <div className="smallcaps text-[8px] text-gilt-600 dark:text-gilt-400">学 习 资 料</div>
+                <ul className="space-y-1">
+                  {task.resources!.map((r) => (
+                    <li key={r.id}>
+                      <button
+                        onClick={() => openExternalLink(r.url)}
+                        className="w-full flex items-start gap-1.5 px-1.5 py-1 text-left
+                          border border-ink-200/70 dark:border-ink-700/30 bg-white dark:bg-night-200/40
+                          hover:border-seal-400/60 hover:bg-seal-50/30 transition-colors"
+                        title={r.url}
+                      >
+                        <span className="w-4 h-4 flex items-center justify-center bg-gilt-500/10 text-gilt-500 flex-shrink-0 mt-0.5">
+                          {r.resource_type === 'video' ? <Play size={8} /> : <ExternalLink size={8} />}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block font-display text-[11px] text-ink-800 dark:text-ink-100 truncate">
+                            {r.title}
+                          </span>
+                          <span className="block font-mono text-[9px] text-ink-soft dark:text-ink-fade truncate">
+                            {(() => { try { return new URL(r.url).hostname.replace(/^www\./, ''); } catch { return r.url; } })()}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderStageColumn = (stage: Stage) => {
+    const isCurrentStage = firstIncomplete?.stageId === stage.id;
+    const stageDone = stage.tasks.length > 0 && stage.tasks.every((t) => t.is_completed);
+    const stageResourceCount = stage.tasks.reduce((sum, t) => sum + (t.resources?.length || 0), 0);
+    return (
+      <section
+        key={stage.id}
+        className={`snap-start flex-shrink-0 w-[210px] flex flex-col border
+          ${isCurrentStage
+            ? 'border-seal-400 shadow-ink-1'
+            : stageDone
+              ? 'border-gilt-500/40'
+              : 'border-ink-200 dark:border-ink-700/40'}
+          bg-paper/60 dark:bg-night-200/40`}
+      >
+        <header className="h-[112px] px-3 py-2.5 flex flex-col bg-gradient-to-br from-seal-500 to-seal-600 text-ink-50">
+          <div className="flex items-center justify-between">
+            <span className="font-display italic text-[11px] tracking-wider opacity-90">
+              {roman(stage.order)}
+            </span>
+            <div className="flex items-center gap-2">
+              {stage.is_fallback && (
+                <span className="font-display italic text-[9px] opacity-90">待补</span>
+              )}
+              {stageDone && <CheckCircle2 size={12} className="text-ink-50" />}
+            </div>
+          </div>
+          <h2
+            className="mt-1 flex-1 font-display text-[13px] font-medium leading-tight line-clamp-2 opacity-95"
+            title={stage.name}
+          >
+            {stage.name}
+          </h2>
+          <p
+            className="mt-0.5 font-display italic text-[10px] opacity-90 truncate flex-shrink-0"
+            title={stage.objective}
+          >
+            {stage.objective}
+          </p>
+          <div className="mt-1.5 flex items-center gap-2 text-[9px] opacity-90 font-mono tracking-wider flex-shrink-0">
+            <span>{stage.stage_type === 'project' ? 'PROJECT' : 'LEARNING'}</span>
+            <span className="opacity-60">·</span>
+            <span>{stage.tasks.length} 节</span>
+            {stageResourceCount > 0 && (
+              <>
+                <span className="opacity-60">·</span>
+                <button
+                  onClick={() => setResourcesOpen(true)}
+                  className="underline-offset-2 hover:underline"
+                >
+                  {stageResourceCount} 资料
+                </button>
+              </>
+            )}
+          </div>
+        </header>
+
+        <div className="px-3 py-2 border-b border-ink-200/60 dark:border-ink-700/40 flex items-center gap-1.5 bg-paper/40 dark:bg-night-100/40">
+          <button
+            onClick={() => useAiCompanionStore.getState().openCompanion({ stageId: stage.id, taskId: null })}
+            className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 font-display text-[10px]
+              text-seal-500 hover:bg-seal-50 dark:hover:bg-seal-700/15 transition-colors"
+            title="问 AI"
+          >
+            <MessageCircleQuestion size={10} />
+            问 AI
+          </button>
+          <button
+            onClick={() => openFeedback({
+              scope: 'stage',
+              stageId: stage.id,
+              taskId: null,
+              title: `第 ${roman(stage.order)} 章 · ${stage.name}`,
+              subject: `阶段「${stage.name}」`,
+            })}
+            className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 font-display text-[10px]
+              text-seal-500 hover:bg-seal-50 dark:hover:bg-seal-700/15 transition-colors"
+            title="评价"
+          >
+            <Star size={10} />
+            评 价
+          </button>
+          {stage.is_fallback && (
+            <button
+              onClick={async () => {
+                await retryStage(stage.id);
+                if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
+              }}
+              className="inline-flex items-center justify-center px-2 py-1 bg-seal-500 hover:bg-seal-400 text-ink-50
+                font-display text-[10px] transition-colors"
+              title="重研此章"
+            >
+              <Play size={10} />
+            </button>
+          )}
+        </div>
+
+        {stage.prerequisites && stage.prerequisites.length > 0 && (
+          <p className="px-3 py-1.5 font-display italic text-[10px] text-ink-fade border-b border-ink-200/40 dark:border-ink-700/30 truncate">
+            <span className="smallcaps text-[8px] text-gilt-500 mr-1">前 置</span>
+            {stage.prerequisites.join(' → ')}
+          </p>
+        )}
+
+        <div className="flex-1 px-2 py-2 space-y-1.5 min-h-[60px]">
+          {stage.tasks.map((task) => renderTaskCard(task))}
+        </div>
+      </section>
+    );
+  };
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* ====== 头部 ====== */}
-      <header className="flex-shrink-0 relative">
-        <div className="px-12 pt-7 pb-5 border-b border-ink-200 dark:border-ink-700/40
-          bg-gradient-to-b from-ink-50 to-transparent dark:from-night-100 dark:to-transparent">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-ink-fade hover:text-seal-500 mb-4
-              font-display italic text-sm transition-colors group"
-          >
-            <ArrowLeft size={15} className="transition-transform group-hover:-translate-x-1" />
-            <span>返 · 目录</span>
-          </button>
+      <header className="flex-shrink-0 px-12 pt-7 pb-5 border-b border-ink-200 dark:border-ink-700/40
+        bg-gradient-to-b from-ink-50 to-transparent dark:from-night-100 dark:to-transparent">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 text-ink-fade hover:text-seal-500 mb-4
+            font-display italic text-sm transition-colors group"
+        >
+          <ArrowLeft size={15} className="transition-transform group-hover:-translate-x-1" />
+          <span>返 · 目录</span>
+        </button>
 
-          <div className="flex items-start justify-between gap-8">
-            <div className="flex-1 min-w-0 animate-ink-spread">
-              <div className="smallcaps mb-2 flex items-center gap-3">
-                <span>在 读 册</span>
-                <span className="text-gilt-500">✦</span>
-                <span className="font-mono normal-case tracking-normal text-ink-fade text-[10px]">
-                  {currentRoadmap.stages.length} 章
-                </span>
-              </div>
-              <h1 className="font-display text-[42px] leading-[1.05] font-semibold text-ink-700 dark:text-ink-100 tracking-tight mb-3">
-                {currentRoadmap.title}
-              </h1>
-              <p className="font-display italic text-base text-ink-fade dark:text-ink-soft max-w-2xl leading-relaxed">
-                {currentRoadmap.description}
-              </p>
+        <div className="flex items-start justify-between gap-8">
+          <div className="flex-1 min-w-0 animate-ink-spread">
+            <div className="smallcaps mb-2 flex items-center gap-3">
+              <span>在 读 册</span>
+              <span className="text-gilt-500">✦</span>
+              <span className="font-mono normal-case tracking-normal text-ink-fade text-[10px]">
+                {overview.stages} 章 · {overview.tasks} 节
+              </span>
             </div>
+            <h1 className="font-display text-[42px] leading-[1.05] font-semibold text-ink-700 dark:text-ink-100 tracking-tight mb-3">
+{currentRoadmap.title}
+              <span
+                className="ml-3 inline-flex items-center gap-1 align-middle font-display italic text-[12px] text-gilt-600 dark:text-gilt-400/80 select-none"
+                aria-hidden
+              >
+                <Library size={12} />
+                点 击 查 看 学 习 资 料
+              </span>
+            </h1>
+            <p className="font-display italic text-base text-ink-fade dark:text-ink-soft max-w-2xl leading-relaxed">
+              {currentRoadmap.description}
+            </p>
+          </div>
 
-            <div className="flex items-center gap-6 flex-shrink-0 animate-ink-spread" style={{ animationDelay: '120ms' }}>
-              <div className="flex flex-col items-center">
-                <div className="relative w-28 h-28">
-                  <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--rule)" strokeWidth="1.5" />
-                    <circle cx="50" cy="50" r={radius}
-                      fill="none" stroke="var(--seal)" strokeWidth="2" strokeLinecap="round"
-                      style={{ strokeDasharray: circumference, strokeDashoffset, transition: 'stroke-dashoffset 0.8s' }}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="font-display text-3xl font-semibold text-seal-500 tabular-nums">
-                      {overview.pct}<tspan fontSize="14" className="text-ink-fade">%</tspan>
-                    </span>
-                    <span className="smallcaps text-[8px] mt-0.5">已 通 关</span>
-                  </div>
+          <div className="flex items-start gap-5 flex-shrink-0 animate-ink-spread" style={{ animationDelay: '120ms' }}>
+            <div className="space-y-2.5 text-right">
+              {[
+                { label: '进 度', value: `${overview.pct}%` },
+                { label: '已 竟', value: `${overview.done}/${overview.tasks}` },
+                { label: '时 长', value: `${currentRoadmap.estimated_total_hours}h` },
+              ].map((m) => (
+                <div key={m.label} className="flex items-baseline justify-end gap-3">
+                  <span className="smallcaps text-[9px]">{m.label}</span>
+                  <span className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 tabular-nums">
+                    {m.value}
+                  </span>
                 </div>
-              </div>
-              <div className="space-y-3 border-l border-ink-200 dark:border-ink-700/40 pl-6">
-                {[
-                  { l: '章',    v: overview.chapters },
-                  { l: '节',    v: overview.total },
-                  { l: '已竟',  v: overview.done },
-                ].map((m) => (
-                  <div key={m.l} className="flex items-baseline gap-3">
-                    <span className="smallcaps w-10 text-[9px]">{m.l}</span>
-                    <span className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 tabular-nums">
-                      {m.v}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              ))}
+              <button
+                onClick={() => openFeedback({
+                  scope: 'roadmap',
+                  stageId: null,
+                  taskId: null,
+                  title: '整体路线',
+                  subject: '整条学习路线',
+                })}
+                className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 font-display text-xs
+                  text-seal-500 hover:bg-seal-50 dark:hover:bg-seal-700/15 transition-colors
+                  border border-seal-400/50 hover:border-seal-400"
+              >
+                <Star size={12} />
+                评 价 整 体 路 线
+              </button>
             </div>
           </div>
-          <div className="rule-gilt mt-5 max-w-3xl" />
         </div>
+        <div className="rule-gilt mt-5 max-w-3xl" />
       </header>
 
-      {/* ====== 章回目录 ====== */}
+      {/* ====== 路线主体 ====== */}
       <div className="flex-1 overflow-auto">
-        <div className="max-w-[860px] mx-auto px-12 py-10">
-          <div className="smallcaps mb-6 flex items-center gap-3">
-            <span>第 三 章 · 通 卷</span>
-            <span className="font-display normal-case tracking-normal text-ink-fade italic text-xs">— Chapters —</span>
-          </div>
-
-          <div className="relative">
-            <div className="ink-thread absolute left-[19px] top-2 bottom-2" aria-hidden />
-
-            <div className="space-y-7">
-              {currentRoadmap.stages.map((stage) => {
-                const stageProgress = getStageProgress(stage);
-                const isComplete = stageProgress === 100 && stage.tasks.length > 0;
-                const stageTasks = stage.tasks.length;
-
-                return (
-                  <article key={stage.id} className="relative pl-14">
-                    <button
-                      onClick={() => handleStageClick(stage)}
-                      disabled={stage.isLocked}
-                      aria-label={stage.name}
-                      className={`absolute left-0 top-1.5 w-10 h-10 flex items-center justify-center transition-all z-10
-                        ${stage.isLocked ? 'cursor-not-allowed' : 'cursor-pointer hover:scale-110'}`}
-                    >
-                      {stage.isLocked ? (
-                        <div className="wax-seal" aria-hidden />
-                      ) : stage.isFallback ? (
-                        <div className="w-9 h-9 border-2 border-dashed border-seal-400 bg-seal-50 dark:bg-seal-700/20 flex items-center justify-center">
-                          <AlertTriangle size={16} className="text-seal-500" />
-                        </div>
-                      ) : stage.stageType === 'quiz' ? (
-                        <div className="w-9 h-9 rounded-full bg-gilt-500/15 border border-gilt-500 flex items-center justify-center text-gilt-500">
-                          <HelpCircle size={17} />
-                        </div>
-                      ) : isComplete ? (
-                        <div className="w-9 h-9 rounded-full border-2 border-gilt-500 bg-gilt-500/10 flex items-center justify-center">
-                          <CheckCircle2 size={17} className="text-gilt-500" />
-                        </div>
-                      ) : (
-                        <div className="w-9 h-9 rounded-full border-2 border-seal-400 bg-paper flex items-center justify-center">
-                          <span className="font-display italic text-base text-seal-500 font-semibold">
-                            {roman(stage.order)}
-                          </span>
-                        </div>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => handleStageClick(stage)}
-                      disabled={stage.isLocked}
-                      className={`w-full text-left transition-all duration-300
-                        ${stage.isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer group'}`}
-                    >
-                      <div className="flex items-baseline gap-3 mb-2">
-                        <span className="smallcaps">第 {roman(stage.order)} 章</span>
-                        <span className="text-gilt-500">·</span>
-                        {stage.isFallback ? (
-                          <span className="font-display italic text-xs text-seal-500">待补</span>
-                        ) : (
-                          <span className={`font-mono text-[10px] tracking-wider
-                            ${stage.stageType === 'quiz' ? 'text-gilt-500' :
-                              stage.stageType === 'project' ? 'text-seal-500' : 'text-ink-fade'}`}>
-                            {stage.stageType === 'learning' ? 'LEARNING' :
-                             stage.stageType === 'quiz' ? 'QUIZ' : 'PROJECT'}
-                          </span>
-                        )}
-                        <span className="ml-auto font-mono text-[10px] text-ink-fade tabular-nums">
-                          {stage.estimated_hours}h · {stageTasks} 节
-                        </span>
-                      </div>
-
-                      <h2 className={`font-display text-[26px] font-semibold leading-tight tracking-tight mb-2 transition-colors
-                        ${stage.isLocked ? 'text-ink-fade' :
-                          isComplete ? 'text-gilt-500' :
-                          'text-ink-700 dark:text-ink-100 group-hover:text-seal-500'}`}>
-                        {stage.name}
-                      </h2>
-                      <p className="font-display italic text-[15px] text-ink-fade dark:text-ink-soft leading-relaxed line-clamp-2 max-w-2xl">
-                        {stage.objective}
-                      </p>
-
-                      {stageTasks > 0 && !stage.isLocked && stage.stageType !== 'quiz' && (
-                        <div className="mt-3 flex items-center gap-3 max-w-md">
-                          <div className="flex-1 h-px bg-ink-200 dark:bg-ink-700/50 relative">
-                            <div
-                              className={`absolute inset-y-0 left-0 transition-all duration-500
-                                ${isComplete ? 'bg-gilt-500' : 'bg-seal-400'}`}
-                              style={{ width: `${stageProgress}%` }}
-                            />
-                          </div>
-                          <span className="font-mono text-[10px] text-ink-fade tabular-nums w-12 text-right">
-                            {stageProgress}%
-                          </span>
-                        </div>
-                      )}
-                    </button>
-                  </article>
-                );
-              })}
+        <div className="max-w-[1280px] mx-auto px-12 py-10">
+          {currentRoadmap.stages.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="font-display italic text-sm text-ink-fade">此 卷 尚 无 章 节</p>
             </div>
-
-            <div className="relative pl-14 mt-10">
-              <div className="absolute left-0 top-1.5 w-10 h-10 flex items-center justify-center text-gilt-500">
-                <div className="font-display text-xl">❦</div>
-              </div>
-              <p className="font-display italic text-ink-fade text-sm">— 终 · 完卷之日,方见月明 —</p>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-4 -mx-2 px-2 snap-x snap-mandatory">
+              {currentRoadmap.stages.map(renderStageColumn)}
             </div>
-          </div>
+          )}
+
+
         </div>
       </div>
-
-      {/* ====== 章节详情 Modal ====== */}
-      {showStageModal && selectedStage && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-10 px-4">
-          <div
-            className="fixed inset-0 bg-ink-900/40 dark:bg-black/60 backdrop-blur-sm"
-            onClick={() => setShowStageModal(false)}
-          />
-          <div className="relative manuscript-card w-full max-w-3xl max-h-[88vh] overflow-auto z-10 animate-ink-spread">
-            <div className="sticky top-0 z-10 bg-ink-50/95 dark:bg-night-100/95 backdrop-blur
-              border-b border-ink-200 dark:border-ink-700/40 px-8 py-5">
-              <div className="flex items-baseline gap-3 mb-2">
-                <span className="smallcaps">第 {roman(selectedStage.order)} 章</span>
-                <span className="text-gilt-500">·</span>
-                <span className={`font-mono text-[10px] tracking-wider
-                  ${selectedStage.stageType === 'quiz' ? 'text-gilt-500' :
-                    selectedStage.stageType === 'project' ? 'text-seal-500' : 'text-ink-fade'}`}>
-                  {selectedStage.stageType === 'learning' ? 'LEARNING' :
-                   selectedStage.stageType === 'quiz' ? 'QUIZ' : 'PROJECT'}
-                </span>
-                <span className="ml-auto font-mono text-[10px] text-ink-fade">
-                  {selectedStage.estimated_hours}h
-                </span>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <h2 className="font-display text-3xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-tight">
-                  {selectedStage.name}
-                </h2>
-                <button
-                  onClick={() => setShowStageModal(false)}
-                  className="p-1.5 text-ink-fade hover:text-seal-500 transition-colors flex-shrink-0"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-8 space-y-7">
-              {selectedStage.isFallback && (
-                <div className="border-l-3 border-seal-400 pl-4 py-3 bg-seal-50/40 dark:bg-seal-700/10">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle size={18} className="text-seal-500 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-display italic text-sm font-semibold text-seal-500 mb-1">
-                        AI 暂 未 着 墨
-                      </div>
-                      <div className="font-display text-xs text-ink-fade leading-relaxed">
-                        此章尚为占位,墨痕未干。你可以重新生成,或依下述目标自补笔记。
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      await retryStage(selectedStage.id);
-                      if (currentRoadmap) fetchRoadmap(currentRoadmap.id);
-                    }}
-                    className="mt-3 ml-7 px-4 py-1.5 bg-seal-500 hover:bg-seal-400 text-ink-50
-                      font-display text-xs flex items-center gap-2 transition-colors"
-                  >
-                    <Play size={12} />重 研 此 章
-                  </button>
-                </div>
-              )}
-
-              <div>
-                <div className="smallcaps mb-2">章 旨</div>
-                <p className="font-display text-[15px] text-ink-700 dark:text-ink-100 leading-relaxed">
-                  {selectedStage.objective}
-                </p>
-                {(selectedStage.stageType === 'learning' || selectedStage.stageType === 'project') && selectedStage.tasks.length > 0 && (
-                  <div className="mt-4 flex items-center gap-3">
-                    <div className="flex-1 h-px bg-ink-200 dark:bg-ink-700/50 relative">
-                      <div className="absolute inset-y-0 left-0 bg-seal-400 transition-all duration-500"
-                        style={{ width: `${getStageProgress(selectedStage)}%` }} />
-                    </div>
-                    <span className="font-mono text-[10px] text-ink-fade tabular-nums w-20 text-right">
-                      {getCompletedTaskCount(selectedStage)}/{selectedStage.tasks.length} · {getStageProgress(selectedStage)}%
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {selectedStage.tasks.length > 0 && (
-                <section>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="smallcaps">本 章 节 录</div>
-                    <span className="font-mono text-[10px] text-ink-fade">
-                      {selectedStage.tasks.length} entries
-                    </span>
-                    <div className="flex-1 h-px bg-ink-200/60 dark:bg-ink-700/40" />
-                  </div>
-
-                  <div className="space-y-2">
-                    {selectedStage.tasks.map((task, ti) => {
-                      const isExpanded = expandedTasks.has(task.id);
-                      return (
-                        <div key={task.id}
-                          className={`border transition-colors
-                            ${task.is_completed
-                              ? 'border-gilt-500/30 bg-gilt-500/5'
-                              : 'border-ink-200 dark:border-ink-700/40 hover:border-seal-400/60'
-                            }`}>
-                          <div className="px-4 py-3 flex items-center gap-3">
-                            <span className="font-display italic text-xs text-ink-fade w-6 tabular-nums">
-                              {String(ti + 1).padStart(2, '0')}.
-                            </span>
-                            <button
-                              onClick={() => handleTaskToggle(task.id, !task.is_completed)}
-                              className="shrink-0 transition-transform hover:scale-110"
-                            >
-                              {task.is_completed
-                                ? <CheckCircle2 size={19} className="text-gilt-500" />
-                                : <Circle size={19} className="text-ink-fade hover:text-seal-400" />}
-                            </button>
-                            <span className={`font-mono text-xs w-5 text-center
-                              ${task.is_completed ? 'text-gilt-500' : 'text-seal-400'}`}>
-                              {taskTypeGlyph[task.task_type] || '·'}
-                            </span>
-                            <button
-                              onClick={() => toggleExpandTask(task.id)}
-                              className="flex-1 text-left"
-                            >
-                              <div className={`font-display text-[15px] font-medium tracking-tight
-                                ${task.is_completed ? 'text-ink-fade line-through decoration-gilt-500/50' : 'text-ink-700 dark:text-ink-100'}`}>
-                                {task.title}
-                              </div>
-                            </button>
-                            <button
-                              onClick={() => toggleExpandTask(task.id)}
-                              className="p-1 text-ink-fade hover:text-seal-500 transition-colors"
-                            >
-                              {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                            </button>
-                          </div>
-
-                          {isExpanded && (
-                            <div className="border-t border-ink-200/60 dark:border-ink-700/30 px-6 py-5 space-y-5 bg-ink-50/30 dark:bg-night-200/30">
-                              {task.content?.trim() ? (
-                                <>
-                                  <div className="markdown-content text-sm">
-                                    <ReactMarkdown
-                                      remarkPlugins={[remarkGfm]}
-                                      rehypePlugins={[[rehypeHighlight, { lowlight }]]}
-                                    >
-                                      {sanitizeMarkdown(task.content)}
-                                    </ReactMarkdown>
-                                  </div>
-                                  {task.code_example && (
-                                    <pre className="bg-ink-700 text-ink-100 p-4 overflow-x-auto text-sm font-mono
-                                      border-l-2 border-gilt-500">
-                                      <code>{task.code_example}</code>
-                                    </pre>
-                                  )}
-                                  {task.exercise && (
-                                    <div className="border border-seal-400/40 bg-seal-50/40 dark:bg-seal-700/10 p-4">
-                                      <div className="smallcaps text-seal-500 mb-2">习 · EXERCISE</div>
-                                      <div className="markdown-content text-sm">
-                                        <ReactMarkdown
-                                          remarkPlugins={[remarkGfm]}
-                                          rehypePlugins={[[rehypeHighlight, { lowlight }]]}
-                                        >
-                                          {sanitizeMarkdown(task.exercise)}
-                                        </ReactMarkdown>
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="border-l-2 border-seal-400 pl-4 py-2">
-                                  <div className="flex items-center gap-2 text-seal-500 font-display italic text-sm font-semibold mb-1">
-                                    <AlertTriangle size={14} />
-                                    墨痕未干
-                                  </div>
-                                  <p className="font-display italic text-xs text-ink-fade leading-relaxed">
-                                    AI 暂未为此节着墨。可循题自补,或于 AI 导师处求教。
-                                  </p>
-                                </div>
-                              )}
-
-                              <div className="flex items-center gap-1 pt-3 border-t border-ink-200/60 dark:border-ink-700/30">
-                                <button
-                                  onClick={() => setTutorTask(task)}
-                                  className="flex items-center gap-1.5 px-2.5 py-1.5 font-display text-xs
-                                    text-seal-500 hover:bg-seal-50 dark:hover:bg-seal-700/15 transition-colors"
-                                >
-                                  <MessageCircle size={13} />
-                                  就 此 节 质 疑
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    if (isFavorited('task', task.id)) {
-                                      const f = favorites.find((x) => x.type === 'task' && x.ref_id === task.id);
-                                      if (f) await removeFavorite(f.id);
-                                    } else {
-                                      await addFavorite({
-                                        type: 'task',
-                                        ref_id: task.id,
-                                        roadmap_id: currentRoadmap?.id ?? null,
-                                        title: task.title,
-                                        preview: task.content.slice(0, 200),
-                                      });
-                                    }
-                                  }}
-                                  className={`flex items-center gap-1.5 px-2.5 py-1.5 font-display text-xs transition-colors
-                                    ${isFavorited('task', task.id)
-                                      ? 'text-gilt-500 bg-gilt-500/10'
-                                      : 'text-ink-fade hover:bg-ink-100 dark:hover:bg-night-300/50'
-                                    }`}
-                                >
-                                  <Star
-                                    size={13}
-                                    className={isFavorited('task', task.id) ? 'fill-gilt-500' : ''}
-                                  />
-                                  {isFavorited('task', task.id) ? '已 收 录' : '收 录'}
-                                </button>
-                              </div>
-
-                              <div>
-                                <div className="smallcaps mb-2.5 text-[9px]">参 考 资 料 · RESOURCES</div>
-                                <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
-                                  {task.resources.map(renderResourceCard)}
-                                  {renderAddResourceButton(task.id)}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
-
-              {canTakeQuiz(selectedStage) && (
-                <button
-                  onClick={() => handleStartQuiz(selectedStage)}
-                  className="w-full py-3.5 bg-gilt-500 hover:bg-gilt-600 text-ink-50
-                    font-display text-sm flex items-center justify-center gap-2 transition-colors
-                    border-2 border-gilt-600"
-                >
-                  <Play size={15} />
-                  <span>参 加 攻 关 测 验</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <QuizModal stage={quizStage as Stage} isOpen={showQuizModal} onClose={() => { setShowQuizModal(false); setQuizStage(null); }} onSubmit={handleQuizSubmit} />
 
       {resourceDrawer && (
         <ResourceDrawer
@@ -638,11 +486,157 @@ export default function RoadmapDetailPage() {
         />
       )}
 
-      <TaskToTutorDrawer
-        isOpen={!!tutorTask}
-        onClose={() => setTutorTask(null)}
-        task={tutorTask}
-      />
+      {resourcesOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-ink-900/40 dark:bg-black/60 backdrop-blur-sm animate-fade-in"
+          onClick={() => setResourcesOpen(false)}
+        >
+          <aside
+            className="absolute right-0 top-0 bottom-0 w-full max-w-md
+              bg-white dark:bg-night-100 shadow-ink-3 flex flex-col animate-ink-spread"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="flex items-center justify-between gap-3 px-6 py-4 border-b border-ink-200 dark:border-ink-700/40">
+              <div>
+                <div className="smallcaps text-[9px] text-gilt-600 dark:text-gilt-400">学 习 资 料</div>
+                <h3 className="font-display text-xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight">
+                  全部资源
+                </h3>
+              </div>
+              <button
+                onClick={() => setResourcesOpen(false)}
+                className="p-1.5 text-ink-fade hover:text-seal-500 transition-colors"
+                title="关闭"
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="flex-1 overflow-auto px-6 py-5 space-y-6">
+              {currentRoadmap.stages.map((stage) => {
+                const allResources = stage.tasks.flatMap((t) =>
+                  (t.resources || []).map((r) => ({ ...r, _taskTitle: t.title, _taskId: t.id }))
+                );
+                if (allResources.length === 0) return null;
+                return (
+                  <section key={stage.id}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="smallcaps text-[9px] text-seal-500">第 {roman(stage.order)} 章</span>
+                      <span className="font-display text-sm font-semibold text-ink-700 dark:text-ink-100 truncate">
+                        {stage.name}
+                      </span>
+                      <span className="ml-auto font-mono text-[10px] text-ink-700 dark:text-ink-200">{allResources.length} 条</span>
+                    </div>
+                    <ul className="space-y-1.5">
+                      {allResources.map((r) => (
+                        <li key={r.id}>
+                          <button
+                            onClick={() => openExternalLink(r.url)}
+                            className="w-full flex items-start gap-2 px-3 py-2 text-left
+                              border border-ink-200 dark:border-ink-700/40 bg-white dark:bg-night-200/30
+                              hover:border-seal-400 hover:bg-seal-50/30 dark:hover:bg-seal-700/10 transition-colors"
+                          >
+                            <span className="w-6 h-6 flex items-center justify-center bg-gilt-500/10 text-gilt-500 flex-shrink-0 mt-0.5">
+                              {r.resource_type === 'video' ? <Play size={10} /> : <ExternalLink size={10} />}
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className="block font-display text-[13px] text-ink-800 dark:text-ink-100 truncate">
+                                {r.title}
+                              </span>
+                              <span className="block font-mono text-[10px] text-ink-700 dark:text-ink-200 truncate mt-0.5">
+                                {(() => { try { return new URL(r.url).hostname.replace(/^www\./, ''); } catch { return r.url; } })()}
+                                {' · '}
+                                {r._taskTitle}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {feedbackTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 dark:bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={closeFeedback}
+        >
+          <div
+            className="w-full max-w-md manuscript-card p-7 animate-ink-spread"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-5">
+              <div>
+                <div className="smallcaps text-[9px] text-gilt-500 mb-1">修 卷 · AI 局 部 优 化</div>
+                <h3 className="font-display text-xl font-semibold text-ink-700 dark:text-ink-100 tracking-tight">
+                  {feedbackTarget.title}
+                </h3>
+              </div>
+              <button
+                onClick={closeFeedback}
+                disabled={optimizing}
+                className="p-1 text-ink-fade hover:text-seal-500 transition-colors disabled:opacity-30"
+                title="关闭"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="font-display italic text-xs text-ink-fade mb-4 leading-relaxed">
+              针对{feedbackTarget.subject}写下具体反馈,AI 会重绘对应部分,并尽量保留你已完成的进度。
+            </p>
+
+            <textarea
+              value={feedbackText}
+              onChange={(e) => {
+                setFeedbackText(e.target.value);
+                setOptimizeError(null);
+              }}
+              rows={5}
+              autoFocus
+              placeholder={feedbackTarget.scope === 'task'
+                ? '例如:这个任务的要点太抽象、希望补一段示例…'
+                : feedbackTarget.scope === 'stage'
+                  ? '例如:这一章的节奏太赶、希望拆成两章…'
+                  : '例如:整体路线偏理论、希望加 1 个实践项目章…'}
+              className="w-full px-4 py-3 bg-paper-fold dark:bg-night-300 border-b-2 border-ink-300 dark:border-ink-600
+                focus:border-seal-400 outline-none resize-y font-display text-sm text-ink-700 dark:text-ink-100
+                placeholder:text-ink-600 placeholder:dark:text-ink-soft placeholder:font-display placeholder:italic"
+            />
+
+            {optimizeError && (
+              <p className="mt-3 font-display italic text-xs text-seal-500 leading-relaxed break-all">{optimizeError}</p>
+            )}
+
+            <div className="mt-5 flex items-center gap-3">
+              <button
+                onClick={closeFeedback}
+                disabled={optimizing}
+                className="px-4 py-2.5 font-display text-sm text-ink-fade hover:text-seal-500 transition-colors
+                  border border-ink-200 dark:border-ink-700/40 disabled:opacity-30"
+              >
+                取 消
+              </button>
+              <button
+                onClick={submitFeedback}
+                disabled={!feedbackText.trim() || optimizing}
+                className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5
+                  bg-seal-500 hover:bg-seal-400 text-ink-50
+                  transition-colors font-display text-sm border-2 border-seal-600
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {optimizing ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                <span>{optimizing ? 'AI 重 绘 中…' : '提 交 优 化'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

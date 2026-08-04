@@ -11,37 +11,11 @@ pub struct Roadmap {
     pub description: String,
     pub estimated_total_hours: f64,
     pub created_at: DateTime<Utc>,
-}
-
-/// Quiz question structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuizQuestion {
-    pub id: String,
-    pub question: String,
-    pub options: Vec<String>,
-    pub correct_index: usize,
-    pub explanation: String,
-}
-
-/// Quiz structure for level-pass mode
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Quiz {
     #[serde(default)]
-    pub questions: Vec<QuizQuestion>,
-    #[serde(default = "default_passing_score")]
-    pub passing_score: f64,
-    pub time_limit_minutes: Option<u32>,
+    pub metadata: Option<String>,
 }
 
-fn default_passing_score() -> f64 {
-    0.7
-}
-
-fn default_pass_threshold() -> f64 {
-    0.7
-}
-
-/// Stage - A phase within a roadmap (extended for pass mode)
+/// Stage - A phase within a roadmap
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Stage {
     pub id: String,
@@ -50,11 +24,9 @@ pub struct Stage {
     pub name: String,
     pub objective: String,
     pub estimated_hours: f64,
-    pub stage_type: String,         // "learning" | "quiz" | "project"
-    pub is_locked: bool,           // True if user hasn't passed previous stage
-    pub quiz_json: Option<String>,  // JSON serialized Quiz (for quiz stages)
-    pub pass_threshold: f64,       // Default 0.7 (70%)
-    pub metadata: Option<String>,  // JSON metadata: {"is_fallback": true}
+    pub stage_type: String,       // "learning" | "project"
+    pub prerequisites: String,    // JSON array text, e.g. ["前一阶段"]
+    pub metadata: Option<String>, // JSON metadata: {"is_fallback": true}
 }
 
 /// Task - Individual learning task within a stage
@@ -62,11 +34,13 @@ pub struct Stage {
 pub struct Task {
     pub id: String,
     pub stage_id: String,
+    pub order: i32,
     pub title: String,
     pub content: String,
+    pub points: String,        // JSON array text, e.g. ["要点1"]
+    pub prerequisites: String, // JSON array text, e.g. ["前置任务"]
     pub task_type: String,
-    pub code_example: Option<String>,
-    pub exercise: Option<String>,
+    pub example: Option<String>,
     pub is_completed: bool,
     pub completed_at: Option<DateTime<Utc>>,
 }
@@ -80,19 +54,6 @@ pub struct Resource {
     pub url: String,
     pub snippet: Option<String>,
     pub resource_type: String,
-}
-
-/// Flashcard - Spaced repetition flashcard
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Flashcard {
-    pub id: String,
-    pub roadmap_id: String,
-    pub question: String,
-    pub answer: String,
-    pub repetitions: i32,
-    pub ease_factor: f64,
-    pub interval: i32,
-    pub next_review_date: DateTime<Utc>,
 }
 
 /// ChatMessage - Chat message in a session
@@ -109,6 +70,8 @@ pub struct ChatSession {
     pub id: String,
     pub roadmap_id: Option<String>,
     pub title: Option<String>,
+    pub stage_id: Option<String>,
+    pub task_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -190,6 +153,8 @@ pub struct RoadmapRequest {
     pub level: String,
     pub goal: String,
     pub difficulty: String,
+    #[serde(default)]
+    pub profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,27 +172,32 @@ pub struct StageResponse {
     pub order: i32,
     pub name: String,
     pub objective: String,
+    #[serde(default)]
+    pub prerequisites: Vec<String>,
     pub estimated_hours: f64,
     pub stage_type: String,
     #[serde(default)]
-    pub is_locked: bool,
-    #[serde(default)]
     pub is_fallback: bool,
-    #[serde(default = "default_pass_threshold")]
-    pub pass_threshold: f64,
     #[serde(default)]
     pub tasks: Vec<TaskResponse>,
-    pub quiz: Option<Quiz>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskResponse {
     pub id: String,
+    pub order: i32,
     pub title: String,
     pub content: String,
+    #[serde(default)]
+    pub points: Vec<String>,
+    #[serde(default)]
+    pub prerequisites: Vec<String>,
     pub task_type: String,
-    pub code_example: Option<String>,
-    pub exercise: Option<String>,
+    pub example: Option<String>,
+    #[serde(default)]
+    pub is_completed: bool,
+    #[serde(default)]
+    pub completed_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub resources: Vec<ResourceResponse>,
 }
@@ -249,12 +219,21 @@ impl Roadmap {
             description,
             estimated_total_hours,
             created_at: Utc::now(),
+            metadata: None,
         }
     }
 }
 
 impl Stage {
-    pub fn new(roadmap_id: String, order: i32, name: String, objective: String, estimated_hours: f64, stage_type: String) -> Self {
+    pub fn new(
+        roadmap_id: String,
+        order: i32,
+        name: String,
+        objective: String,
+        estimated_hours: f64,
+        stage_type: String,
+        prerequisites: String,
+    ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             roadmap_id,
@@ -263,29 +242,30 @@ impl Stage {
             objective,
             estimated_hours,
             stage_type,
-            is_locked: order > 1,  // First stage unlocked, others locked by default
-            quiz_json: None,
-            pass_threshold: 0.7,
+            prerequisites,
             metadata: None,
         }
-    }
-
-    pub fn with_quiz(mut self, quiz: Quiz) -> Self {
-        self.quiz_json = Some(serde_json::to_string(&quiz).unwrap_or_default());
-        self
     }
 }
 
 impl Task {
-    pub fn new(stage_id: String, title: String, content: String, task_type: String) -> Self {
+    pub fn new(
+        stage_id: String,
+        order: i32,
+        title: String,
+        content: String,
+        task_type: String,
+    ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             stage_id,
+            order,
             title,
             content,
+            points: "[]".to_string(),
+            prerequisites: "[]".to_string(),
             task_type,
-            code_example: None,
-            exercise: None,
+            example: None,
             is_completed: false,
             completed_at: None,
         }
@@ -301,31 +281,6 @@ impl Resource {
             url,
             snippet: None,
             resource_type,
-        }
-    }
-}
-
-/// Flashcard with full context from its roadmap
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlashcardDetail {
-    pub flashcard: Flashcard,
-    pub roadmap: Roadmap,
-    pub stages: Vec<Stage>,
-    pub tasks: Vec<Task>,
-    pub resources: Vec<Resource>,
-}
-
-impl Flashcard {
-    pub fn new(roadmap_id: String, question: String, answer: String) -> Self {
-        Self {
-            id: Uuid::new_v4().to_string(),
-            roadmap_id,
-            question,
-            answer,
-            repetitions: 0,
-            ease_factor: 2.5,
-            interval: 0,
-            next_review_date: Utc::now(),
         }
     }
 }

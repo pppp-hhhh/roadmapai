@@ -4,20 +4,7 @@ export interface Roadmap {
   description: string;
   estimated_total_hours: number;
   created_at: string;
-}
-
-export interface QuizQuestion {
-  id: string;
-  question: string;
-  options: string[];
-  correctIndex: number;
-  explanation: string;
-}
-
-export interface Quiz {
-  questions: QuizQuestion[];
-  passingScore: number;
-  timeLimitMinutes?: number;
+  metadata?: string | null;
 }
 
 export interface Stage {
@@ -25,25 +12,25 @@ export interface Stage {
   order: number;
   name: string;
   objective: string;
+  prerequisites: string[];
   estimated_hours: number;
   tasks: Task[];
-  stageType: 'learning' | 'quiz' | 'project';
-  isLocked: boolean;
-  isFallback?: boolean;
-  quiz?: Quiz;
-  passThreshold: number;
+  stage_type: 'learning' | 'project';
+  is_fallback?: boolean;
 }
 
 export interface Task {
   id: string;
   stage_id?: string;
+  order: number;
   title: string;
   content: string;
-  task_type: 'reading' | 'exercise' | 'project' | 'video' | 'quiz';
-  code_example?: string;
-  exercise?: string;
+  points: string[];
+  prerequisites: string[];
+  task_type: 'reading' | 'video' | 'project';
+  example?: string | null;
   is_completed: boolean;
-  completed_at?: string;
+  completed_at?: string | null;
   resources: Resource[];
 }
 
@@ -53,25 +40,6 @@ export interface Resource {
   url: string;
   snippet?: string;
   resource_type: 'documentation' | 'video' | 'course' | 'article';
-}
-
-export interface Flashcard {
-  id: string;
-  roadmap_id: string;
-  question: string;
-  answer: string;
-  repetitions: number;
-  ease_factor: number;
-  interval: number;
-  next_review_date: string;
-}
-
-export interface FlashcardDetail {
-  flashcard: Flashcard;
-  roadmap: Roadmap;
-  stages: Stage[];
-  tasks: Task[];
-  resources: Resource[];
 }
 
 export interface ChatMessage {
@@ -86,6 +54,7 @@ export interface RoadmapRequest {
   level: string;
   goal: string;
   difficulty: string;
+  profile?: string;
 }
 
 export interface Settings {
@@ -94,19 +63,51 @@ export interface Settings {
   default_weekly_hours: number;
 }
 
-export interface QuestionFeedback {
-  questionId: string;
-  correct: boolean;
-  correctIndex: number;
-  explanation: string;
+export interface IntakeAskRequest {
+  topic: string;
+  goal: string;
+  conversation: string[];
+  round: number;
 }
 
-export interface QuizResult {
-  passed: boolean;
-  score: number;
-  correctCount: number;
-  totalQuestions: number;
-  feedback: QuestionFeedback[];
+export interface IntakeAskResponse {
+  question: string;
+  round: number;
+}
+
+export interface IntakeSummarizeRequest {
+  topic: string;
+  goal: string;
+  conversation: string[];
+  supplementary?: string;
+}
+
+export interface IntakeSummary {
+  topic: string;
+  goal: string;
+  level: string;
+  difficulty: string;
+  profile: string;
+}
+
+export type OptimizeScope = 'roadmap' | 'stage' | 'task';
+
+export interface OptimizeRoadmapRequest {
+  roadmap_id: string;
+  scope: OptimizeScope;
+  stage_id?: string | null;
+  task_id?: string | null;
+  feedback: string;
+}
+
+export interface RoadmapDetail {
+  id: string;
+  title: string;
+  description: string;
+  estimated_total_hours: number;
+  created_at: string;
+  metadata?: string | null;
+  stages: Stage[];
 }
 
 export interface ProgressEvent {
