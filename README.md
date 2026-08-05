@@ -170,7 +170,7 @@ npm run tauri build
 2. 选择 **Build Desktop App** → **Run workflow**
 3. 构建完成后，在对应运行记录中下载 artifact：
    - `RoadmapAI-windows`：NSIS `.exe` + MSI `.msi`
-   - `RoadmapAI-macos-universal`：Universal `.app` + `.dmg`
+   - `RoadmapAI-macos-universal`：Universal `.app`（zip）+ `.dmg`
    - `RoadmapAI-linux`：`.deb` + AppImage
 
 4. 推送 `v*` 标签（如 `v1.2.0`）会自动触发构建，并创建一个 **Draft Release**；到 **Releases** 页面补充发布说明后点击 **Publish release** 即可发布。
