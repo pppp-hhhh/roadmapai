@@ -287,7 +287,7 @@ export default function RoadmapDetailPage() {
               : 'border-ink-200 dark:border-ink-700/40'}
           bg-paper/60 dark:bg-night-200/40`}
       >
-        <header className="h-[112px] px-3 py-2.5 flex flex-col bg-gradient-to-br from-seal-500 to-seal-600 text-ink-50">
+        <header className="min-h-[112px] px-3 py-2.5 flex flex-col bg-gradient-to-br from-seal-500 to-seal-600 text-ink-50">
           <div className="flex items-center justify-between">
             <span className="font-display italic text-[11px] tracking-wider opacity-90">
               {roman(stage.order)}
@@ -306,7 +306,7 @@ export default function RoadmapDetailPage() {
             {stage.name}
           </h2>
           <p
-            className="mt-0.5 font-display italic text-[10px] opacity-90 truncate flex-shrink-0"
+            className="mt-1 font-display italic text-[11px] opacity-95 leading-snug line-clamp-3 break-words flex-shrink-0"
             title={stage.objective}
           >
             {stage.objective}
