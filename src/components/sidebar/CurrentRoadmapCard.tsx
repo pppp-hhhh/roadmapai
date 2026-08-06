@@ -80,35 +80,7 @@ export default function CurrentRoadmapCard() {
 
   // 展开态 — 无当前路线
   if (!currentRoadmapId) {
-    return (
-      <div className="px-5 pb-4">
-        <div className="manuscript-card p-5 relative overflow-hidden">
-          <span
-            aria-hidden
-            className="absolute top-0 right-0 w-5 h-5 border-l border-b border-ink-200 dark:border-ink-700/60"
-            style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
-          />
-          <div className="relative text-center">
-            <div className="smallcaps mb-3 text-seal-500">— 空 —</div>
-            <p className="font-display text-base font-semibold text-ink-700 dark:text-ink-100 mb-1 tracking-tight">
-              书架尚空
-            </p>
-            <p className="font-display italic text-[11px] text-ink-fade dark:text-ink-soft mb-4 leading-relaxed">
-              此处尚无一册在读
-            </p>
-            <button
-              onClick={() => navigate('/create')}
-              className="group inline-flex items-center gap-1.5 px-3.5 py-1.5
-                bg-seal-500 hover:bg-seal-400 text-ink-50
-                font-display text-xs transition-colors"
-            >
-              <span>撰 写 新 篇</span>
-              <span className="transition-transform group-hover:translate-x-0.5">→</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   // 展开态 — 有当前路线
