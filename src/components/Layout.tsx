@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useSidebarStore } from '../stores/useSidebarStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
-import { CurrentRoadmapCard, TodayTodoList, MainNav, GlobalSection } from './sidebar';
+import { TodayTodoList, MainNav, GlobalSection } from './sidebar';
 import AiCompanion from './AiCompanion';
 import ManuscriptMark from './manuscript/ManuscriptMark';
 
@@ -84,7 +84,6 @@ export default function Layout() {
           {!isCollapsed && <div className="rule-gilt mt-4" />}
         </div>
 
-        <CurrentRoadmapCard />
         <TodayTodoList />
         <MainNav />
         <GlobalSection />
