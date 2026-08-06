@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { FC } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -22,6 +23,29 @@ import { ResourceDrawer } from '../components/ai-loop';
 import { openExternalLink } from '../utils/links';
 import { roman } from '../components/manuscript/roman';
 import type { OptimizeScope, Resource, Stage, Task } from '../types';
+
+const StageObjective: FC<{ objective: string }> = ({ objective }) => {
+  const [open, setOpen] = useState(false);
+  const long = objective.length > 18;
+  return (
+    <div className="mt-1">
+      <p
+        className={`font-display italic text-[10px] opacity-95 leading-snug break-words
+          ${open ? '' : 'line-clamp-1'}`}
+      >
+        {objective}
+      </p>
+      {long && (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="mt-0.5 font-display text-[9px] tracking-wider opacity-80 hover:opacity-100 underline-offset-2 hover:underline"
+        >
+          {open ? '收 起' : '展 开'}
+        </button>
+      )}
+    </div>
+  );
+};
 
 export default function RoadmapDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -305,12 +329,7 @@ export default function RoadmapDetailPage() {
           >
             {stage.name}
           </h2>
-          <p
-            className="mt-1 font-display italic text-[11px] opacity-95 leading-snug line-clamp-3 break-words flex-shrink-0"
-            title={stage.objective}
-          >
-            {stage.objective}
-          </p>
+          <StageObjective objective={stage.objective} />
           <div className="mt-1.5 flex items-center gap-2 text-[9px] opacity-90 font-mono tracking-wider flex-shrink-0">
             <span>{stage.stage_type === 'project' ? 'PROJECT' : 'LEARNING'}</span>
             <span className="opacity-60">·</span>
