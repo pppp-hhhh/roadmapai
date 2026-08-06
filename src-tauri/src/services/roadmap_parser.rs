@@ -266,67 +266,342 @@ pub fn fix_null_to_zero(v: &mut serde_json::Value) {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum JsonContainer {
+    Object,
+    Array,
+}
+
+#[derive(Clone, Copy)]
+struct Container {
+    kind: JsonContainer,
+    open_index: usize,
+    has_content: bool,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum LastJsonToken {
+    None,
+    OpenObject,
+    OpenArray,
+    Colon,
+    Comma,
+    Key,
+    Value,
+}
+
+#[derive(Clone, Copy)]
+enum StringEscape {
+    None,
+    Backslash,
+    Unicode { digits_left: u8, start: usize },
+}
+
+fn trim_trailing_separators(out: &mut Vec<char>) {
+    while let Some(c) = out.last().copied() {
+        if c.is_whitespace() || c == ',' {
+            out.pop();
+        } else {
+            break;
+        }
+    }
+}
+
+fn complete_value_token(out: &mut Vec<char>, start: usize) {
+    let token: String = out[start..].iter().collect::<String>();
+    let token = token.trim();
+    if token.is_empty() {
+        out.push('n');
+        out.push('u');
+        out.push('l');
+        out.push('l');
+        return;
+    }
+    if matches!(token, "true" | "false" | "null") {
+        return;
+    }
+    for (full, prefix) in [("true", 't'), ("false", 'f'), ("null", 'n')] {
+        if token.starts_with(prefix) && full.starts_with(token) {
+            out.extend(full[token.len()..].chars());
+            return;
+        }
+    }
+
+    let mut candidate = token.to_string();
+    let mut valid_number = false;
+    if candidate == "-" || candidate.ends_with('.') {
+        candidate.push('0');
+    } else if candidate.ends_with('e')
+        || candidate.ends_with('E')
+        || candidate.ends_with('+')
+        || candidate.ends_with('-')
+    {
+        candidate.push('0');
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&candidate) {
+        valid_number = value.is_number();
+    }
+    if valid_number {
+        out.truncate(start);
+        out.extend(candidate.chars());
+    } else {
+        out.truncate(start);
+        out.extend("null".chars());
+    }
+}
+
 pub fn repair_truncated_json(s: &str) -> String {
+    let s = strip_thinking_tags(s);
     let s = s.trim().to_string();
     let s = s
         .strip_prefix("```json")
         .or_else(|| s.strip_prefix("```"))
         .unwrap_or(&s)
         .trim();
-    let s = s.strip_suffix("```").unwrap_or(s).trim().to_string();
-    let mut result = s;
+    let s = s.strip_suffix("```").unwrap_or(s).trim();
+    let chars: Vec<char> = s.chars().collect();
+
+    let mut result: Vec<char> = Vec::with_capacity(chars.len() + 16);
+    let mut stack: Vec<Container> = Vec::new();
+    let mut key_start: Option<usize> = None;
+    let mut value_start: Option<usize> = None;
+    let mut last = LastJsonToken::None;
     let mut in_string = false;
-    let mut escape_next = false;
-    for ch in result.chars() {
-        if escape_next {
-            escape_next = false;
+    let mut string_is_key = false;
+    let mut escape = StringEscape::None;
+    let mut i = 0;
+
+    while i < chars.len() {
+        if in_string {
+            let c = chars[i];
+            match escape {
+                StringEscape::Unicode { digits_left, start } => {
+                    result.push(if c.is_ascii_hexdigit() { c } else { '0' });
+                    escape = if digits_left == 1 {
+                        StringEscape::None
+                    } else {
+                        StringEscape::Unicode {
+                            digits_left: digits_left - 1,
+                            start,
+                        }
+                    };
+                }
+                StringEscape::Backslash => match c {
+                    'u' => {
+                        result.push('u');
+                        escape = StringEscape::Unicode {
+                            digits_left: 4,
+                            start: result.len() - 2,
+                        };
+                    }
+                    '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't' => {
+                        result.push(c);
+                        escape = StringEscape::None;
+                    }
+                    '\n' | '\r' => {
+                        result.push('\\');
+                        result.push('n');
+                        escape = StringEscape::None;
+                    }
+                    other => {
+                        result.push(other);
+                        escape = StringEscape::None;
+                    }
+                },
+                StringEscape::None => {
+                    result.push(c);
+                    if c == '\\' {
+                        escape = StringEscape::Backslash;
+                    } else if c == '"' {
+                        in_string = false;
+                        if string_is_key {
+                            last = LastJsonToken::Key;
+                        } else {
+                            last = LastJsonToken::Value;
+                            value_start = None;
+                        }
+                        string_is_key = false;
+                    }
+                }
+            }
+            i += 1;
             continue;
         }
-        if ch == '\\' {
-            escape_next = true;
+
+        let c = chars[i];
+        if c == '"' {
+            let is_key = matches!(stack.last(), Some(c) if c.kind == JsonContainer::Object)
+                && matches!(
+                    last,
+                    LastJsonToken::None | LastJsonToken::OpenObject | LastJsonToken::Comma
+                );
+            result.push(c);
+            in_string = true;
+            string_is_key = is_key;
+            escape = StringEscape::None;
+            if is_key {
+                key_start = Some(result.len());
+            } else {
+                value_start = None;
+            }
+            i += 1;
             continue;
         }
-        if ch == '"' {
-            in_string = !in_string;
+
+        match c {
+            '{' => {
+                stack.push(Container {
+                    kind: JsonContainer::Object,
+                    open_index: result.len(),
+                    has_content: false,
+                });
+                result.push(c);
+                last = LastJsonToken::OpenObject;
+                value_start = None;
+            }
+            '[' => {
+                stack.push(Container {
+                    kind: JsonContainer::Array,
+                    open_index: result.len(),
+                    has_content: false,
+                });
+                result.push(c);
+                last = LastJsonToken::OpenArray;
+                value_start = None;
+            }
+            '}' => {
+                if matches!(stack.last(), Some(c) if c.kind == JsonContainer::Object) {
+                    if let Some(parent) = stack.last_mut() {
+                        parent.has_content = true;
+                    }
+                    result.push(c);
+                    stack.pop();
+                    if let Some(parent) = stack.last_mut() {
+                        parent.has_content = true;
+                    }
+                    last = LastJsonToken::Value;
+                }
+                value_start = None;
+            }
+            ']' => {
+                if matches!(stack.last(), Some(c) if c.kind == JsonContainer::Array) {
+                    if let Some(parent) = stack.last_mut() {
+                        parent.has_content = true;
+                    }
+                    result.push(c);
+                    stack.pop();
+                    if let Some(parent) = stack.last_mut() {
+                        parent.has_content = true;
+                    }
+                    last = LastJsonToken::Value;
+                }
+                value_start = None;
+            }
+            ':' => {
+                result.push(c);
+                last = LastJsonToken::Colon;
+                key_start = None;
+                value_start = None;
+            }
+            ',' => {
+                result.push(c);
+                last = LastJsonToken::Comma;
+                value_start = None;
+            }
+            c if c.is_whitespace() => {
+                result.push(c);
+            }
+            c if matches!(
+                last,
+                LastJsonToken::Colon | LastJsonToken::OpenArray | LastJsonToken::Comma
+            ) =>
+            {
+                if value_start.is_none() {
+                    value_start = Some(result.len());
+                }
+                result.push(c);
+                last = LastJsonToken::Value;
+            }
+            c if value_start.is_some() && !matches!(c, ',' | '}' | ']') => {
+                result.push(c);
+            }
+            _ => {}
         }
+        i += 1;
     }
+
     if in_string {
-        result.push('"');
-    }
-    let mut brace_depth: i32 = 0;
-    let mut bracket_depth: i32 = 0;
-    in_string = false;
-    escape_next = false;
-    for ch in result.chars() {
-        if escape_next {
-            escape_next = false;
-            continue;
+        match escape {
+            StringEscape::Backslash => {
+                if result.last() == Some(&'\\') {
+                    result.pop();
+                }
+            }
+            StringEscape::Unicode { start, .. } => {
+                result.truncate(start);
+            }
+            StringEscape::None => {}
         }
-        if ch == '\\' {
-            escape_next = true;
-            continue;
-        }
-        if ch == '"' {
-            in_string = !in_string;
-            continue;
-        }
-        if !in_string {
-            match ch {
-                '{' => brace_depth += 1,
-                '}' => brace_depth -= 1,
-                '[' => bracket_depth += 1,
-                ']' => bracket_depth -= 1,
-                _ => {}
+        if string_is_key {
+            remove_incomplete_key(&mut result, &mut stack, &mut last, key_start);
+        } else {
+            result.push('"');
+            last = LastJsonToken::Value;
+            if let Some(parent) = stack.last_mut() {
+                parent.has_content = true;
             }
         }
     }
-    for _ in 0..bracket_depth.max(0) {
-        result.push(']');
+
+    if last == LastJsonToken::Key {
+        remove_incomplete_key(&mut result, &mut stack, &mut last, key_start);
     }
-    for _ in 0..brace_depth.max(0) {
-        result.push('}');
+
+    if let Some(start) = value_start {
+        complete_value_token(&mut result, start);
+        if let Some(parent) = stack.last_mut() {
+            parent.has_content = true;
+        }
     }
-    result
+
+    if last == LastJsonToken::Colon {
+        result.extend("null".chars());
+    }
+
+    trim_trailing_separators(&mut result);
+    for container in stack.iter().rev() {
+        match container.kind {
+            JsonContainer::Array => result.push(']'),
+            JsonContainer::Object => result.push('}'),
+        }
+    }
+    result.into_iter().collect()
+}
+
+fn remove_incomplete_key(
+    result: &mut Vec<char>,
+    stack: &mut Vec<Container>,
+    last: &mut LastJsonToken,
+    key_start: Option<usize>,
+) {
+    let Some(start) = key_start else {
+        return;
+    };
+    let drop_object = stack.len() > 1
+        && matches!(stack.last(), Some(c) if c.kind == JsonContainer::Object && !c.has_content)
+        && matches!(
+            stack.get(stack.len() - 2),
+            Some(c) if c.kind == JsonContainer::Array
+        );
+    if drop_object {
+        let open_index = stack.pop().map(|c| c.open_index).unwrap_or(0);
+        result.truncate(open_index);
+        trim_trailing_separators(result);
+        *last = LastJsonToken::Comma;
+    } else {
+        result.truncate(start.saturating_sub(1));
+        *last = LastJsonToken::OpenObject;
+    }
 }
 
 pub struct OutlineResult {
@@ -543,4 +818,60 @@ pub fn parse_task_content_response(
         }
     }
     Err("任务内容 JSON 解析失败".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repairs_nested_truncated_json_in_stack_order() {
+        let raw = r#"{"stages":[{"name":"S1","tasks":[{"title":"T1","content":"hello"}]},{"name":"S2","tasks":[{"title":"T2","content":"world"}]},{"name":"S3","tasks":[{"title":"T3","content":"cut"#;
+        let repaired = repair_truncated_json(raw);
+        let value: serde_json::Value = serde_json::from_str(&repaired).expect("repaired json");
+        let stages = value["stages"].as_array().expect("stages array");
+        assert_eq!(stages.len(), 3);
+        assert_eq!(stages[2]["tasks"][0]["content"], "cut");
+    }
+
+    #[test]
+    fn repairs_dangling_backslash_before_string_end() {
+        let raw = r#"{"content":"abc\"#;
+        let repaired = repair_truncated_json(raw);
+        let value: serde_json::Value = serde_json::from_str(&repaired).expect("repaired json");
+        assert_eq!(value["content"], "abc");
+    }
+
+    #[test]
+    fn fills_missing_array_value_after_colon() {
+        let raw = "{\"content\":\"abc\",\"points\":\"";
+        let repaired = repair_truncated_json(raw);
+        let value: serde_json::Value = serde_json::from_str(&repaired).expect("repaired json");
+        assert_eq!(value["content"], "abc");
+        assert_eq!(value["points"], "");
+    }
+
+    #[test]
+    fn fills_missing_value_after_colon_with_null() {
+        let raw = r#"{"content":"abc","points":"#;
+        let repaired = repair_truncated_json(raw);
+        let value: serde_json::Value = serde_json::from_str(&repaired).expect("repaired json");
+        assert!(value["points"].is_null());
+    }
+
+    #[test]
+    fn removes_trailing_comma_before_closing() {
+        let raw = r#"{"stages":[{"name":"a"},{"name":"b"}, "#;
+        let repaired = repair_truncated_json(raw);
+        let value: serde_json::Value = serde_json::from_str(&repaired).expect("repaired json");
+        assert_eq!(value["stages"].as_array().expect("stages array").len(), 2);
+    }
+
+    #[test]
+    fn drops_incomplete_object_from_array() {
+        let raw = "{\"stages\":[{\"name\":\"a\"},{\"name\":\"b\"},{\"}";
+        let repaired = repair_truncated_json(raw);
+        let value: serde_json::Value = serde_json::from_str(&repaired).expect("repaired json");
+        assert_eq!(value["stages"].as_array().expect("stages array").len(), 2);
+    }
 }

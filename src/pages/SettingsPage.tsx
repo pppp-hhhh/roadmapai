@@ -140,7 +140,7 @@ export default function SettingsPage() {
             className="font-display italic text-xs text-ink-fade hover:text-seal-500
               border-b border-dotted border-ink-fade/40 hover:border-seal-500 transition-colors mt-2"
           >
-            重 启 序 章 →
+            重 新 配 置 →
           </button>
         </header>
 
@@ -480,10 +480,10 @@ export default function SettingsPage() {
           >
             <div className="smallcaps mb-3 text-seal-500">— 提 示 —</div>
             <h3 className="font-display text-2xl font-semibold text-ink-700 dark:text-ink-100 mb-2 tracking-tight">
-              重 启 序 章?
+              重 新 配 置?
             </h3>
             <p className="font-display italic text-sm text-ink-fade leading-relaxed mb-6">
-              将重新运行新手引导,并清空当前引导进度。
+              将重新打开初始化流程,并清空当前配置进度。
               <br />已有路线与笔记不受影响。
             </p>
             <div className="flex justify-end gap-2">
@@ -502,7 +502,7 @@ export default function SettingsPage() {
                 }}
                 className="px-4 py-2 bg-seal-500 hover:bg-seal-400 text-ink-50 font-display text-sm transition-colors"
               >
-                重 启
+                重 新 配 置
               </button>
             </div>
           </div>

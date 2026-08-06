@@ -115,7 +115,12 @@ async fn call_openai_compatible(
         .as_str()
         .unwrap_or("unknown");
     if finish_reason == "length" {
-        warn!("⚠ 模型因 token 限制截断了响应 (finish_reason=length)，尝试修复截断的 JSON...");
+        let err = format!(
+            "\"{}\" 因 token 限制截断了响应 (finish_reason=length)，返回内容不完整",
+            model
+        );
+        error!("⚠ {}", err);
+        return Err(err);
     }
 
     let reasoning = chat_value["choices"][0]["message"]["reasoning_content"]
@@ -939,7 +944,15 @@ pub async fn generate_roadmap(
                 None,
                 "资源搜索完成，正在保存...",
             );
+        } else {
+            info!(
+                "→ [Tavily] 已跳过：已配置的 Tavily key 为空，保留 AI 生成的资源"
+            );
         }
+    } else {
+        info!(
+            "→ [Tavily] 已跳过：未找到 Tavily key，请在设置中配置后使用真实资源搜索"
+        );
     }
 
     if state.gen_cancel.load(Ordering::SeqCst) != cancel_version {

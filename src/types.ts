@@ -67,6 +67,7 @@ export interface IntakeAskRequest {
   topic: string;
   goal: string;
   conversation: string[];
+  skipped: string[];
   round: number;
 }
 

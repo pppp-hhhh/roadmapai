@@ -5,6 +5,7 @@ import {
   Loader2,
   MessageCircleQuestion,
   PenLine,
+  Shuffle,
   Sparkles,
   Wand2,
 } from 'lucide-react';
@@ -51,6 +52,7 @@ const IntakeFlow: FC<IntakeFlowProps> = ({ onConfirm, compact = false, generatin
     summary,
     setBaseline,
     askNext,
+    skipQuestion,
     submitAnswer,
     backToQuestion,
     setSupplementary,
@@ -87,6 +89,11 @@ const IntakeFlow: FC<IntakeFlowProps> = ({ onConfirm, compact = false, generatin
     submitAnswer(answer);
     setAnswer('');
     await askNext();
+  };
+
+  const handleSkip = async () => {
+    setAnswer('');
+    await skipQuestion();
   };
 
   const handleConfirm = async () => {
@@ -229,11 +236,11 @@ const IntakeFlow: FC<IntakeFlowProps> = ({ onConfirm, compact = false, generatin
     return (
       <div className="max-w-2xl mx-auto">
         {renderRoundHeader()}
-        {answeredRounds >= INTAKE_SUMMARY_ROUND && (
+        {round >= INTAKE_SUMMARY_ROUND && (
           <div className="mb-5 border-2 border-dashed border-gilt-500/70 bg-gilt-500/5 p-5 flex flex-col sm:flex-row sm:items-center gap-4">
             <div className="flex-1">
               <div className="smallcaps text-[9px] text-gilt-500 mb-1">
-                已 收 集 {answeredRounds} 轮 对 话
+                已 访 谈 {round} 问 · 已 收 集 {answeredRounds} 轮 回 答
               </div>
               <p className="font-display italic text-sm text-ink-700 dark:text-ink-100 leading-relaxed">
                 可以生成总结,也可以继续回答本题,没有轮数上限。
@@ -279,6 +286,16 @@ const IntakeFlow: FC<IntakeFlowProps> = ({ onConfirm, compact = false, generatin
           >
             <span>提 交 并 继 续</span>
             <ArrowRight size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={handleSkip}
+            className="mt-3 w-full flex items-center justify-center gap-2 px-6 py-2.5
+              font-display text-sm text-ink-fade hover:text-seal-500
+              transition-colors border border-ink-200 dark:border-ink-700/40"
+          >
+            <Shuffle size={14} />
+            <span>换 个 话 题</span>
           </button>
         </div>
       </div>

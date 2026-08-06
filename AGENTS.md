@@ -30,7 +30,7 @@ Each API call uses `call_ai()` which dispatches by `provider_type`:
 - `services/tavily.rs` — Tavily search integration
 
 ## Critical Notes
-- `finish_reason=length` is non-fatal on Layer 1 (warn+continue), logged on other layers
+- `finish_reason=length` / `stop_reason=max_tokens` is a hard error at the transport layer; truncated output is never repaired or parsed
 - `.ok()` is NEVER used on call_ai — errors must be logged before fallback
 - Layer 2 failure → empty task_outlines + StageDetail::fallback (not generic tasks)
 - Layer 3 failure → regex fallback for content field, empty for rest

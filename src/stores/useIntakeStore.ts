@@ -18,6 +18,7 @@ interface IntakeState {
   topic: string;
   goal: string;
   conversation: string[];
+  skippedQuestions: string[];
   supplementary: string;
   round: number;
   question: string;
@@ -28,6 +29,7 @@ interface IntakeState {
 
   setBaseline: (topic: string, goal: string) => void;
   askNext: () => Promise<void>;
+  skipQuestion: () => Promise<void>;
   submitAnswer: (answer: string) => void;
   backToQuestion: () => void;
   setSupplementary: (value: string) => void;
@@ -40,6 +42,7 @@ export const useIntakeStore = create<IntakeState>((set, get) => ({
   topic: '',
   goal: '',
   conversation: [],
+  skippedQuestions: [],
   supplementary: '',
   round: 0,
   question: '',
@@ -52,7 +55,7 @@ export const useIntakeStore = create<IntakeState>((set, get) => ({
     set({ topic: topic.trim(), goal: goal.trim(), error: null, status: 'baseline' }),
 
   askNext: async () => {
-    const { topic, goal, conversation, round } = get();
+    const { topic, goal, conversation, skippedQuestions, round } = get();
     if (!topic.trim() || !goal.trim()) return;
     const nextRound = round + 1;
     set({ status: 'asking', error: null, errorAction: null });
@@ -62,6 +65,7 @@ export const useIntakeStore = create<IntakeState>((set, get) => ({
           topic: topic.trim(),
           goal: goal.trim(),
           conversation,
+          skipped: skippedQuestions,
           round: nextRound,
         },
       });
@@ -75,6 +79,19 @@ export const useIntakeStore = create<IntakeState>((set, get) => ({
     } catch (error) {
       set({ status: 'error', error: String(error), errorAction: 'ask' });
     }
+  },
+
+  skipQuestion: async () => {
+    const { conversation, question, skippedQuestions } = get();
+    const pendingCurrent =
+      conversation.length > 0 && conversation[conversation.length - 1] === question;
+    const nextConversation = pendingCurrent ? conversation.slice(0, -1) : conversation;
+    const nextSkipped =
+      question.trim() && !skippedQuestions.includes(question)
+        ? [...skippedQuestions, question]
+        : skippedQuestions;
+    set({ conversation: nextConversation, skippedQuestions: nextSkipped });
+    await get().askNext();
   },
 
   submitAnswer: (answer) => {
@@ -118,6 +135,7 @@ export const useIntakeStore = create<IntakeState>((set, get) => ({
       topic: '',
       goal: '',
       conversation: [],
+      skippedQuestions: [],
       supplementary: '',
       round: 0,
       question: '',

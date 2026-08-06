@@ -2,29 +2,17 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 
-export type OnboardingStep = 0 | 1 | 2 | 3 | 4;
-export type OnboardingLevel = '入门' | '进阶' | '高级';
-
 export interface OnboardingData {
   apiKey: string;
   baseUrl: string;
   model: string;
   tavilyKey: string;
-  topic: string;
-  level: OnboardingLevel;
-  goal: string;
-  createdRoadmapId: string | null;
 }
 
 interface OnboardingState extends OnboardingData {
-  currentStep: OnboardingStep;
   completed: boolean;
-  hasUnsavedChanges: boolean;
 
   setField: <K extends keyof OnboardingData>(key: K, value: OnboardingData[K]) => void;
-  nextStep: () => void;
-  prevStep: () => void;
-  gotoStep: (step: OnboardingStep) => void;
   reset: () => void;
   markCompleted: () => void;
   saveApiConfig: () => Promise<void>;
@@ -35,34 +23,19 @@ const initialData: OnboardingData = {
   baseUrl: '',
   model: '',
   tavilyKey: '',
-  topic: '',
-  level: '入门',
-  goal: '',
-  createdRoadmapId: null,
 };
 
 export const useOnboardingStore = create<OnboardingState>()(
   persist(
     (set, get) => ({
       ...initialData,
-      currentStep: 0,
       completed: false,
-      hasUnsavedChanges: false,
 
       setField: (key, value) => {
-        set({ [key]: value, hasUnsavedChanges: true } as any);
+        set({ [key]: value } as any);
       },
 
-      nextStep: () => {
-        const s = get().currentStep;
-        if (s < 4) set({ currentStep: (s + 1) as OnboardingStep });
-      },
-      prevStep: () => {
-        const s = get().currentStep;
-        if (s > 0) set({ currentStep: (s - 1) as OnboardingStep });
-      },
-      gotoStep: (step) => set({ currentStep: step }),
-      reset: () => set({ ...initialData, currentStep: 0, completed: false, hasUnsavedChanges: false }),
+      reset: () => set({ ...initialData, completed: false }),
       markCompleted: () => set({ completed: true }),
 
       saveApiConfig: async () => {
@@ -96,12 +69,20 @@ export const useOnboardingStore = create<OnboardingState>()(
         baseUrl: s.baseUrl,
         model: s.model,
         tavilyKey: s.tavilyKey,
-        topic: s.topic,
-        level: s.level,
-        goal: s.goal,
-        currentStep: s.currentStep,
         completed: s.completed,
       }),
+      version: 1,
+      migrate: (persisted) => {
+        const old = (persisted ?? {}) as Partial<OnboardingData> & { completed?: boolean };
+        return {
+          ...initialData,
+          apiKey: old.apiKey ?? '',
+          baseUrl: old.baseUrl ?? '',
+          model: old.model ?? '',
+          tavilyKey: old.tavilyKey ?? '',
+          completed: old.completed ?? false,
+        };
+      },
     }
   )
 );

@@ -14,6 +14,8 @@ pub struct IntakeAskRequest {
     pub goal: String,
     #[serde(default)]
     pub conversation: Vec<String>,
+    #[serde(default)]
+    pub skipped: Vec<String>,
     pub round: u32,
 }
 
@@ -99,16 +101,20 @@ async fn resolve_ai_connection(state: &State<'_, AppState>) -> Result<AiConnecti
     })
 }
 
-fn format_conversation(conversation: &[String]) -> String {
-    if conversation.is_empty() {
-        return "（暂无对话）".to_string();
+fn format_entries(lines: &[String], empty_text: &str) -> String {
+    if lines.is_empty() {
+        return empty_text.to_string();
     }
-    conversation
+    lines
         .iter()
         .enumerate()
         .map(|(i, line)| format!("{}. {}", i + 1, line))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn format_conversation(conversation: &[String]) -> String {
+    format_entries(conversation, "（暂无对话）")
 }
 
 #[tauri::command]
@@ -117,10 +123,11 @@ pub async fn intake_ask(
     request: IntakeAskRequest,
 ) -> Result<IntakeAskResponse, String> {
     info!(
-        "intake_ask round={} topic={} conversation_len={}",
+        "intake_ask round={} topic={} conversation_len={} skipped_len={}",
         request.round,
         request.topic,
-        request.conversation.len()
+        request.conversation.len(),
+        request.skipped.len()
     );
 
     let conn = resolve_ai_connection(&state).await?;
@@ -130,6 +137,7 @@ pub async fn intake_ask(
         .map_err(|e| format!("创建 HTTP 客户端失败：{}", e))?;
 
     let conversation_text = format_conversation(&request.conversation);
+    let skipped_text = format_entries(&request.skipped, "（无）");
     let system = "你是一位学习需求访谈助手，只负责问下一个问题。你使用简体中文，每次只问一个问题，问题要具体、简短（不超过80字），不要自问自答，不要替用户回答。";
     let user_prompt = format!(
         r#"你在为「{}」设计学习路线前做需求访谈，目标是：{}。
@@ -139,11 +147,15 @@ pub async fn intake_ask(
 【已收集的对话】
 {}
 
+【用户跳过的题目】
+{}
+
 【下一个问题要求】
 1. 只输出一个简体中文追问，简洁具体，聚焦尚未澄清的关键信息。
 2. 优先追问这些方面（按缺失程度选择，不要一次问多个）：目标与期望成果；当前基础/相关经验；学习偏好（资料形式/节奏/深度）；期望深度；与该主题相关的具体追问。
 3. 禁止主动追问“每周几小时/学习时长”“截止时间”“约束条件”，除非用户已经在对话中主动提到了这些内容，此时可以自然追问。
 4. 已经问过的、用户已回答的信息不要再问。
+5. 不要用任何措辞、换说法或换角度再次追问用户跳过的题目；优先选择其他尚未澄清的方向。
 
 【输出格式】
 直接返回 JSON：{{"question": "你的追问"}}。如果无法输出 JSON，也可以只返回纯文本问题。不要输出任何其他内容。"#,
@@ -151,7 +163,8 @@ pub async fn intake_ask(
         request.goal,
         request.round,
         INTAKE_SUMMARY_ROUNDS,
-        conversation_text
+        conversation_text,
+        skipped_text
     );
 
     let raw = call_ai_with_retry(

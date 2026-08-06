@@ -41,7 +41,7 @@ const StepApiKey: FC = () => {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="text-center mb-10">
-        <div className="smallcaps mb-3">第 一 章 · 配 钥</div>
+        <div className="smallcaps mb-3">配 钥 · 入 卷</div>
         <h2 className="font-display text-[40px] font-semibold text-ink-700 dark:text-ink-100 tracking-tight leading-tight mb-2">
           钥 匙 入 匣
         </h2>
