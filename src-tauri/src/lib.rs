@@ -92,6 +92,7 @@ pub fn run() {
             commands::favorites::remove_favorite,
             commands::stats::get_user_stats,
             commands::ai_loop::refine_task_content,
+            commands::export::export_roadmap,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 应用运行异常");

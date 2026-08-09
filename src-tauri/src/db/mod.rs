@@ -480,7 +480,7 @@ impl Database {
         sqlx::query(
             r#"
             INSERT INTO stages (id, roadmap_id, order_index, name, objective, estimated_hours, stage_type, prerequisites, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&stage.id)

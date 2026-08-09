@@ -1,5 +1,6 @@
 pub mod ai_loop;
 pub mod chat;
+pub mod export;
 pub mod favorites;
 pub mod intake;
 pub mod optimize;

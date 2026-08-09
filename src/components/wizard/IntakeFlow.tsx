@@ -13,7 +13,24 @@ import {
   INTAKE_SUMMARY_ROUND,
   useIntakeStore,
 } from '../../stores/useIntakeStore';
-import { validateTopic } from '../../stores/useCreateRoadmapWizardStore';
+interface ValidateTopicResult {
+  valid: boolean;
+  warning?: string;
+  error?: string;
+}
+
+const TOO_VAGUE = ['AI', '编程', '学习', '技术'];
+
+function validateTopic(topic: string): ValidateTopicResult {
+  const t = topic.trim();
+  if (t.length < 2) return { valid: false, error: '主题太短,至少 2 个字' };
+  if (t.length > 60) return { valid: false, error: '主题过长,不超过 60 字' };
+  if (TOO_VAGUE.includes(t)) {
+    return { valid: true, warning: '主题过于宽泛,建议具体一些(如 "机器学习" 比 "AI" 更聚焦)' };
+  }
+  return { valid: true };
+}
+
 import type { RoadmapRequest } from '../../types';
 import { roman } from '../manuscript/roman';
 

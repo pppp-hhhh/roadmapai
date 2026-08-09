@@ -13,6 +13,8 @@ import {
   MapPin,
   MessageCircleQuestion,
   Play,
+  Download,
+  FileText,
   Star,
   Wand2,
   X,
@@ -22,6 +24,7 @@ import { useAiCompanionStore } from '../stores/useAiCompanionStore';
 import { ResourceDrawer } from '../components/ai-loop';
 import { openExternalLink } from '../utils/links';
 import { roman } from '../components/manuscript/roman';
+import { downloadRoadmap } from '../utils/download';
 import type { OptimizeScope, Resource, Stage, Task } from '../types';
 
 const StageObjective: FC<{ objective: string }> = ({ objective }) => {
@@ -83,7 +86,19 @@ export default function RoadmapDetailPage() {
   const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
   const [feedbackText, setFeedbackText] = useState('');
   const [optimizing, setOptimizing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
+
+
+  const handleExport = async (format: 'md' | 'html') => {
+    if (!id || exporting) return;
+    setExporting(true);
+    try { await downloadRoadmap({ roadmap_id: id, format }); }
+    catch (e) { console.error('导出失败:', e); }
+    setExporting(false);
+    setShowExportMenu(false);
+  };
 
   const openFeedback = (target: FeedbackTarget) => {
     setFeedbackTarget(target);
@@ -469,6 +484,34 @@ export default function RoadmapDetailPage() {
                 <Star size={12} />
                 评 价 整 体 路 线
               </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowExportMenu(v => !v)}
+                  className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 font-display text-xs
+                    text-ink-600 dark:text-ink-300 hover:bg-ink-100/50 dark:hover:bg-night-300/50 transition-colors
+                    border border-ink-300/60 dark:border-ink-600/60 hover:border-seal-400"
+                >
+                  <Download size={12} />
+                  导 出 抄 本
+                </button>
+                {showExportMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
+                    <div className="absolute right-0 top-full mt-1 z-50 manuscript-card p-1 shadow-ink-2 animate-ink-spread">
+                      <button onClick={() => handleExport('md')} disabled={exporting}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-display text-ink-600 dark:text-ink-200 hover:bg-ink-100/60 dark:hover:bg-night-300/60 whitespace-nowrap">
+                        {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                        Markdown (.md)
+                      </button>
+                      <button onClick={() => handleExport('html')} disabled={exporting}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-display text-ink-600 dark:text-ink-200 hover:bg-ink-100/60 dark:hover:bg-night-300/60 whitespace-nowrap">
+                        {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                        HTML 可打印 (.html)
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
